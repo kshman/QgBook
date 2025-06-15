@@ -2,8 +2,42 @@
 #include "book.h"
 #include "configs.h"
 
+// 앞서 선언
+typedef struct ReadWindow ReadWindow;
+
+// 그리기 위젯 정의
+typedef struct
+{
+	GtkWidget parent;
+	ReadWindow* read_window;
+} ReadDrawWidget;
+
+typedef struct
+{
+	GtkWidgetClass parent_class;
+} ReadDrawWidgetClass;
+
+G_DEFINE_TYPE(ReadDrawWidget, read_draw_widget, GTK_TYPE_WIDGET)
+
+static void read_draw_widget_snapshot(GtkWidget* widget, GtkSnapshot* snapshot);
+
+static GtkWidget* read_draw_widget_new(ReadWindow* rw)
+{
+	GtkWidget* widget = GTK_WIDGET(g_object_new(read_draw_widget_get_type(), NULL));
+	((ReadDrawWidget*)widget)->read_window = rw;
+	return widget;
+}
+
+static void read_draw_widget_class_init(ReadDrawWidgetClass* klass)
+{
+	GtkWidgetClass* widget_class = GTK_WIDGET_CLASS(klass);
+	widget_class->snapshot = read_draw_widget_snapshot;
+}
+
+static void read_draw_widget_init(ReadDrawWidget* self) {}
+
 // 데이터 구조체 예시
-typedef struct ReadWindow
+struct ReadWindow
 {
 	// 윈도우
 	GtkWidget* window;
@@ -26,7 +60,7 @@ typedef struct ReadWindow
 	// 알림
 	guint32 notify_id;
 	char* notify_text;
-} ReadWindow;
+};
 
 // 시그날 콜백
 static void signal_destroy(GtkWidget* widget, ReadWindow* rw);
@@ -42,8 +76,6 @@ static void menu_view_zoom_toggled(GtkCheckButton* button, ReadWindow* rw);
 static void menu_view_mode_toggled(GtkCheckButton* button, ReadWindow* rw);
 static void menu_view_mode_clicked(GtkButton* button, ReadWindow* rw);
 static void menu_view_quality_toggled(GtkCheckButton* button, ReadWindow* rw);
-static void draw_callback(GtkDrawingArea* area, cairo_t* cr, int width, int height, gpointer user_data);
-static void draw_snapshot(GtkWidget* widget, GtkSnapshot* snapshot, gpointer user_data);
 
 // ReadWindow 함수
 static void update_view_zoom(ReadWindow* rw, bool zoom, bool redraw);
@@ -215,11 +247,9 @@ ReadWindow* read_window_new(GtkApplication* app)
 	gtk_window_set_titlebar(GTK_WINDOW(rw->window), header);
 
 	// DrawingArea
-	rw->draw = gtk_drawing_area_new();
+	rw->draw = read_draw_widget_new(rw);
 	gtk_widget_set_hexpand(rw->draw, TRUE);
 	gtk_widget_set_vexpand(rw->draw, TRUE);
-	//gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(rw->draw), draw_callback, rw, NULL);
-	g_signal_connect(rw->draw, "snapshot", G_CALLBACK(draw_snapshot), rw);
 
 	// 메인 레이아웃
 	GtkWidget* main_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -384,43 +414,35 @@ static void menu_view_quality_toggled(GtkCheckButton* button, ReadWindow* rw)
 	update_view_quality(rw, quality, true);
 }
 
-// 그리기 콜백 함수
-static void draw_callback(GtkDrawingArea* area, cairo_t* cr, int width, int height, gpointer user_data)
+// 스냅샷 재정의로 책 윈도우를 그리자고
+static void read_draw_widget_snapshot(GtkWidget* widget, GtkSnapshot* snapshot)
 {
-	ReadWindow* rw = user_data;
+	ReadDrawWidget* self = (ReadDrawWidget*)widget;
+	ReadWindow* rw = self->read_window;
+	float width = (float)gtk_widget_get_width(widget);
+	float height = (float)gtk_widget_get_height(widget);
 
-	cairo_set_antialias(cr, CAIRO_ANTIALIAS_SUBPIXEL);
+	// 배경
+	const GdkRGBA red = { 0.1f, 0.1f, 0.1f, 1.0f };
+	gtk_snapshot_append_color(snapshot, &red, &GRAPHENE_RECT_INIT(0, 0, width, height));
 
-	cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
-	cairo_paint(cr);
+	// 카이로로 그릴거
+	cairo_t* cr = gtk_snapshot_append_cairo(snapshot, &GRAPHENE_RECT_INIT(0, 0, width, height));
+	if (cr)
+	{
+		cairo_set_source_rgba(cr, 0.2, 0.4, 0.6, 1.0);
+		cairo_arc(cr, 200, 150, 100, 0, 2 * G_PI);
+		cairo_fill(cr);
+		cairo_destroy(cr);
+	}
 
-	cairo_set_source_rgb(cr, 0.2, 0.4, 0.6);
-	cairo_arc(cr, 200, 150, 100, 0, 2 * 3.1415926);
-	cairo_fill(cr);
-
-	//GdkTexture* logo = res_get_texture(RES_PIX_HOUSEBARI);
-	//if (logo)
-	//{
-	//	const int lw = gdk_pixbuf_get_width(logo);
-	//	const int lh = gdk_pixbuf_get_height(logo);
-	//	const int y = rw->height > lh ? rw->height - lh - 50 : 10;
-	//	cairo_save(cr);
-	//	gdk_cairo_set_source_pixbuf(cr, logo, rw->width - lw - 100, y);
-	//	cairo_paint(cr);
-	//	cairo_restore(cr);
-	//}
-
-	// paint_book(rw, cr);
-	// paint_notify(rw, cr);
+	// 로고 그리기
+	GdkTexture* logo = res_get_texture(RES_PIX_HOUSEBARI);
+	if (logo)
+	{
+		const float lw = (float)gdk_texture_get_width(logo);
+		const float lh = (float)gdk_texture_get_height(logo);
+		const float y = width > lh ? height - lh - 50.0f : 10.0f;
+		gtk_snapshot_append_texture(snapshot, logo, &GRAPHENE_RECT_INIT(width - lw - 100.0f, y, lw, lh));
+	}
 }
-
-// snapshot 콜백 함수
-static void draw_snapshot(GtkWidget* widget, GtkSnapshot* snapshot, gpointer user_data)
-{
-	// 예시: 배경 그리기
-	GdkRGBA bg = {0.1f, 0.1f, 0.1f, 1.0f};
-	gtk_snapshot_append_color(snapshot, &bg, &GRAPHENE_RECT_INIT(0, 0, gtk_widget_get_width(widget), gtk_widget_get_height(widget)));
-
-}
-
-// 연결 방법
