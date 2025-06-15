@@ -1,0 +1,120 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="소스 파일">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="헤더 파일">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="리소스 파일">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="외부 라이브러리">
+      <UniqueIdentifier>{f4742edf-3428-448d-a483-df21a6eb08af}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="외부 라이브러리\sqlite3">
+      <UniqueIdentifier>{e19aa4e2-9dd5-4d2c-8887-5a9024ea3ec7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="자료">
+      <UniqueIdentifier>{4175f1f1-b444-42f0-b3ca-e82fe2bfcfc3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="자료\lang">
+      <UniqueIdentifier>{f710dbc4-ca92-47f5-8e5d-fe182322a60c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="자료\icon">
+      <UniqueIdentifier>{6b694bdc-1186-4c8b-a35e-3a94adaef435}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="자료\pix">
+      <UniqueIdentifier>{9302f9f4-57ff-4c13-9a99-654d64d7ec16}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="pch.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="configs.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="doumi.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="read_window.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="resg.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="pch.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="sqlite\sqlite3.h">
+      <Filter>외부 라이브러리\sqlite3</Filter>
+    </ClInclude>
+    <ClInclude Include="sqlite\sqlite3ext.h">
+      <Filter>외부 라이브러리\sqlite3</Filter>
+    </ClInclude>
+    <ClInclude Include="configs.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="book.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="data\style.css">
+      <Filter>자료</Filter>
+    </None>
+    <None Include="..\README.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="data\lang\ko.txt">
+      <Filter>자료\lang</Filter>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="data\icon\directory.png">
+      <Filter>자료\icon</Filter>
+    </Image>
+    <Image Include="data\icon\move.png">
+      <Filter>자료\icon</Filter>
+    </Image>
+    <Image Include="data\icon\purutu.png">
+      <Filter>자료\icon</Filter>
+    </Image>
+    <Image Include="data\icon\rename.png">
+      <Filter>자료\icon</Filter>
+    </Image>
+    <Image Include="data\icon\view-mode-fit.png">
+      <Filter>자료\icon</Filter>
+    </Image>
+    <Image Include="data\icon\view-mode-l2r.png">
+      <Filter>자료\icon</Filter>
+    </Image>
+    <Image Include="data\icon\view-mode-r2l.png">
+      <Filter>자료\icon</Filter>
+    </Image>
+    <Image Include="data\pix\housebari_head_128.jpg">
+      <Filter>자료\pix</Filter>
+    </Image>
+    <Image Include="data\pix\no_image.png">
+      <Filter>자료\pix</Filter>
+    </Image>
+    <Image Include="data\DuView.ico">
+      <Filter>자료</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="resg.xml">
+      <Filter>리소스 파일</Filter>
+    </CustomBuild>
+  </ItemGroup>
+</Project>

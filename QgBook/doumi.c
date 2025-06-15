@@ -1,0 +1,420 @@
+﻿#include "pch.h"
+#ifndef _WIN32
+#include <sys/file.h>
+#include <fcntl.h>
+#endif
+
+#ifdef _WIN32
+// VS2022용 UTF8 출력을 위하여
+__declspec(dllexport) const wchar_t* doumi_utf8_to_wstr(const char* utf8)
+{
+	static wchar_t buf[1024];
+	MultiByteToWideChar(CP_UTF8, 0, utf8, -1, buf, 1024);
+	return buf;
+}
+#endif
+
+// 문자열을 불린으로
+bool doumi_atob(const char* str)
+{
+	if (str == NULL) return false;
+	if (g_ascii_strcasecmp(str, "1") == 0 ||
+		g_ascii_strcasecmp(str, "true") == 0 ||
+		g_ascii_strcasecmp(str, "yes") == 0 ||
+		g_ascii_strcasecmp(str, "on") == 0 ||
+		g_ascii_strcasecmp(str, "cham") == 0)
+		return true;
+	return false;
+}
+
+// 문자열을 코드 문자열로 인코딩
+// 반환값은 변환된 문자열의 길이, value와 value_size가 유효하지 않으면 필요한 버퍼의 크기를 반환
+// 그 밖에 오류는 -1을 반환
+int doumi_encode(const char* input, char* value, size_t value_size)
+{
+	g_return_val_if_fail(input, -1);
+
+	const size_t len = strlen(input);
+	const unsigned char* bs = (const unsigned char*)input;
+
+	if (value == NULL || value_size == 0)
+		return (int)len * 2 + 1;
+
+	char* p = value;
+	size_t written = 0;
+	for (size_t i = 0; i < len; ++i)
+	{
+		if (written + 2 >= value_size) // 남은 공간이 2글자(16진수) + 널 종료자보다 작으면 중단
+			break;
+		uint8_t inv = 255 - bs[i];
+		g_snprintf(p, 3, "%02X", inv);
+		p += 2;
+		written += 2;
+	}
+	*p = '\0';
+	return (int)written;
+}
+
+// 16진수 문자를 숫자로
+static uint8_t hex_char_to_byte(char c)
+{
+	if (c >= '0' && c <= '9')
+		return c - '0';
+	if (c >= 'A' && c <= 'F')
+		return c - 'A' + 10;
+	if (c >= 'a' && c <= 'f')
+		return c - 'a' + 10;
+	return 0; // 잘못된 문자
+}
+
+// 코드 문자열을 문자열로 디코딩
+// 반환값: 성공시 0, 실패시 -1, value와 value_size가 NULL/0이면 필요한 버퍼 크기 반환
+int doumi_decode(const char* encoded, char* value, size_t value_size)
+{
+	g_return_val_if_fail(encoded, -1);
+
+	size_t encoded_len = strlen(encoded);
+	if (encoded_len % 2 != 0)
+		return -1; // 잘못된 길이
+
+	size_t decoded_len = encoded_len / 2;
+	if (value == NULL || value_size == 0)
+		return (int)decoded_len + 1;
+
+	size_t max_write = value_size - 1; // 널 종료자 공간 확보
+	size_t i;
+	for (i = 0; i < decoded_len && i < max_write; ++i)
+	{
+		uint8_t hi = hex_char_to_byte(encoded[i * 2]);
+		uint8_t lo = hex_char_to_byte(encoded[i * 2 + 1]);
+		uint8_t inv = (uint8_t)((hi << 4) | lo);
+		value[i] = (char)(255 - inv);
+	}
+	value[i] = '\0';
+	return (int)i;
+}
+
+// 베이스64 테이블
+static const char base64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+// 베이스64 인코딩
+int doumi_base64_encode(const char* input, char* value, size_t value_size)
+{
+	if (!input)
+		return -1;
+
+	size_t in_len = strlen(input);
+	size_t out_len = ((in_len + 2) / 3) * 4;
+	if (value == NULL || value_size == 0)
+		return (int)out_len + 1;
+
+	size_t written = 0;
+	size_t i = 0;
+	while (i < in_len && written + 4 < value_size)
+	{
+		uint32_t octet_a = i < in_len ? (unsigned char)input[i++] : 0;
+		uint32_t octet_b = i < in_len ? (unsigned char)input[i++] : 0;
+		uint32_t octet_c = i < in_len ? (unsigned char)input[i++] : 0;
+
+		uint32_t triple = (octet_a << 16) | (octet_b << 8) | octet_c;
+
+		if (written + 4 >= value_size)
+			break;
+
+		value[written++] = base64_table[(triple >> 18) & 0x3F];
+		value[written++] = base64_table[(triple >> 12) & 0x3F];
+		// 아래 두줄 bugprone-narrowing-conversions 때문에 캐스팅한거임
+		value[written++] = (char)((i - 2 <= in_len) ? base64_table[(triple >> 6) & 0x3F] : '=');
+		value[written++] = (char)((i - 1 <= in_len) ? base64_table[triple & 0x3F] : '=');
+	}
+	if (written < value_size)
+		value[written] = '\0';
+	return (int)written;
+}
+
+// 베이스64 문자 -> 값 변환
+static int base64_char_to_val(char c)
+{
+	if (c >= 'A' && c <= 'Z') return c - 'A';
+	if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+	if (c >= '0' && c <= '9') return c - '0' + 52;
+	if (c == '+') return 62;
+	if (c == '/') return 63;
+	return -1;
+}
+
+// 베이스64 디코딩
+int doumi_base64_decode(const char* encoded, char* value, size_t value_size)
+{
+	if (!encoded)
+		return -1;
+
+	size_t encoded_len = strlen(encoded);
+	if (encoded_len % 4 != 0)
+		return -1;
+
+	size_t out_len = (encoded_len / 4) * 3;
+	if (encoded_len >= 4)
+	{
+		if (encoded[encoded_len - 1] == '=') out_len--;
+		if (encoded[encoded_len - 2] == '=') out_len--;
+	}
+
+	if (value == NULL || value_size == 0)
+		return (int)out_len + 1;
+
+	size_t written = 0;
+	for (size_t i = 0; i < encoded_len; i += 4)
+	{
+		int v[4];
+		for (int j = 0; j < 4; ++j)
+		{
+			v[j] = base64_char_to_val(encoded[i + j]);
+			if (encoded[i + j] == '=') v[j] = 0;
+			else if (v[j] < 0) return -1;
+		}
+		if (written < value_size - 1)
+			value[written++] = (char)((v[0] << 2) | (v[1] >> 4));
+		if (encoded[i + 2] != '=' && written < value_size - 1)
+			value[written++] = (char)(((v[1] & 0xF) << 4) | (v[2] >> 2));
+		if (encoded[i + 3] != '=' && written < value_size - 1)
+			value[written++] = (char)(((v[2] & 0x3) << 6) | v[3]);
+	}
+	if (written < value_size)
+		value[written] = '\0';
+	return (int)written;
+}
+
+// 압축 후 base64 인코딩, 결과를 동적 할당하여 반환
+char* doumi_huffman_encode(const char* input)
+{
+	g_return_val_if_fail(input != NULL, NULL);
+
+	size_t in_len = strlen(input);
+	uLongf comp_bound = compressBound((uLong)in_len);
+	guint8* comp_buf = g_new(guint8, comp_bound);
+	if (!comp_buf) return NULL;
+
+	int res = compress(comp_buf, &comp_bound, (const Bytef*)input, (uLong)in_len);
+	if (res != Z_OK) {
+		g_free(comp_buf);
+		return NULL;
+	}
+
+	size_t b64_size = ((comp_bound + 2) / 3) * 4 + 1;
+	char* b64_buf = g_new(char, b64_size);
+	if (!b64_buf) {
+		g_free(comp_buf);
+		return NULL;
+	}
+
+	int b64len = doumi_base64_encode((const char*)comp_buf, b64_buf, b64_size);
+	g_free(comp_buf);
+
+	if (b64len < 0) {
+		g_free(b64_buf);
+		return NULL;
+	}
+
+	return b64_buf;
+}
+
+// base64 디코딩 후 압축 해제, 결과를 동적 할당하여 반환
+char* doumi_huffman_decode(const char* input)
+{
+	g_return_val_if_fail(input != NULL, NULL);
+
+	// base64 디코딩
+	int comp_size = doumi_base64_decode(input, NULL, 0);
+	if (comp_size <= 0) return NULL;
+	guint8* comp_buf = g_new(guint8, comp_size);
+	if (!comp_buf) return NULL;
+	if (doumi_base64_decode(input, (char*)comp_buf, comp_size) < 0) {
+		g_free(comp_buf);
+		return NULL;
+	}
+
+	// 압축 해제 버퍼 크기 추정 (초기값: 압축 데이터의 4배, 최소 256)
+	uLongf out_size = comp_size * 4;
+	if (out_size < 256) out_size = 256;
+	char* out_buf = g_new(char, out_size);
+
+	int res = uncompress((Bytef*)out_buf, &out_size, comp_buf, comp_size - 1); // -1: 널 종료자 제외
+	if (res == Z_BUF_ERROR) {
+		// 버퍼가 부족하면 더 크게 재시도
+		out_size = comp_size * 16;
+		g_free(out_buf);
+		out_buf = g_new(char, out_size);
+		res = uncompress((Bytef*)out_buf, &out_size, comp_buf, comp_size - 1);
+	}
+	g_free(comp_buf);
+
+	if (res != Z_OK) {
+		g_free(out_buf);
+		return NULL;
+	}
+
+	// 널 종료 보장
+	out_buf[out_size] = '\0';
+	return out_buf;
+}
+
+// 리소스 이름 만들기용 TLS
+static GPrivate resource_name_tls = G_PRIVATE_INIT(g_free);
+
+// 리소스 이름 만들기
+const char *doumi_resource_path(const char* path)
+{
+	char* data = g_str_has_prefix(path, "/") ? g_strdup(path) : g_strconcat("/qgbook/data/", path, NULL);
+	g_private_set(&resource_name_tls, data);
+	return data;
+}
+
+// 리소스 이름 만들기 + 포맷
+const char *doumi_resource_path_format(const char* fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	char* data = g_strdup_vprintf(fmt, args);  // NOLINT(clang-diagnostic-format-nonliteral)
+	va_end(args);
+	if (!g_str_has_prefix(data, "/"))
+	{
+		char* tmp = g_strconcat("/qgbook/data/", data, NULL);
+		g_free(data);
+		data = tmp;
+	}
+	g_private_set(&resource_name_tls, data);
+	return data;
+}
+
+// 리소스에서 텍스트 파일 읽기. 반환값은 g_free로 해제할 것
+char *doumi_load_resource_text(const char* resource_path, gsize* out_length)
+{
+	GError* err = NULL;
+	GBytes* bytes = g_resources_lookup_data(resource_path, G_RESOURCE_LOOKUP_FLAGS_NONE, &err);
+	if (!bytes)
+	{
+		g_log("DOUMI", G_LOG_LEVEL_ERROR, "Text resource: %s", err->message);
+		g_clear_error(&err);
+		return NULL;
+	}
+	gsize size = 0;
+	const gchar* data = g_bytes_get_data(bytes, &size);
+	gchar* result = g_strndup(data, size);
+	if (out_length) *out_length = size;
+	g_bytes_unref(bytes);
+	return result;
+}
+
+// 픽스맵 만들기
+GdkPixbuf *doumi_load_gdk_pixbuf(const void* buffer, size_t size)
+{
+	GInputStream* stream = g_memory_input_stream_new_from_data(buffer, (gssize)size, NULL);
+	GError* err = NULL;
+	GdkPixbuf* pix = gdk_pixbuf_new_from_stream(stream, NULL, &err);
+	g_object_unref(stream);
+	if (!pix)
+	{
+		g_log("DOUMI", G_LOG_LEVEL_ERROR, "Pixbuf resource: %s", err->message);
+		g_clear_error(&err);
+	}
+	return pix;
+}
+
+// 텍스쳐 만들기
+GdkTexture *doumi_load_gdk_texture(const void* buffer, size_t size)
+{
+	GBytes* bytes = g_bytes_new(buffer, size);
+	GError* err = NULL;
+	GdkTexture* tex = gdk_texture_new_from_bytes(bytes, &err);
+	g_bytes_unref(bytes);
+	if (!tex)
+	{
+		g_log("DOUMI", G_LOG_LEVEL_ERROR, "Texture resource: %s", err->message);
+		g_clear_error(&err);
+	}
+	return tex;
+}
+
+
+// 잠금 뮤텍스
+#ifdef _WIN32
+static HANDLE doumi_lock;
+#else
+static int doumi_fd;
+#endif
+
+// 잠금 만들기
+bool doumi_lock_program(void)
+{
+#ifdef _WIN32
+	doumi_lock = CreateMutexA(NULL, FALSE, "ksh.qg.book.unique");
+	if (doumi_lock == NULL)
+		return false;
+	if (GetLastError() == ERROR_ALREADY_EXISTS)
+	{
+		// 다른데서 뮤텍스를 만드럿네
+		CloseHandle(doumi_lock);
+		doumi_lock = NULL;
+		return false;
+	}
+	return true;
+#else
+	doumi_fd = open("/tmp/qgbook.lock", O_CREAT | O_RDWR, 0666);
+	if (doumi_fd < 0)
+		return false;
+	// 파일 잠금으로 처리
+	if (flock(doumi_fd, LOCK_EX | LOCK_NB) < 0)
+	{
+		// 실행중
+		close(doumi_fd);
+		doumi_fd = 0;
+		return false;
+	}
+	return true;
+#endif
+}
+
+// 잠금 풀기
+void doumi_unlock_program(void)
+{
+#ifdef _WIN32
+	g_return_if_fail(doumi_lock != NULL);
+	CloseHandle(doumi_lock);
+	doumi_lock = NULL;
+#else
+	g_return_if_fail(doumi_fd != 0);
+	close(doumi_fd);
+	doumi_fd = 0;
+#endif
+}
+
+
+// 메시지 박스 선택 콜백
+static void mesg_box_on_choose(GObject* source_object, GAsyncResult* res, gpointer user_data)
+{
+	GtkAlertDialog* dialog = GTK_ALERT_DIALOG(source_object);
+	GMainLoop* loop = user_data;
+	gtk_alert_dialog_choose_finish(dialog, res, NULL);
+	g_main_loop_quit(loop);
+}
+
+// 메시지 박스
+void doumi_mesg_box(GtkWindow* parent, const char* text, const char* detail)
+{
+	GtkAlertDialog* dialog = gtk_alert_dialog_new("");
+	gtk_alert_dialog_set_modal(dialog, true);
+	gtk_alert_dialog_set_message(dialog, text);
+	gtk_alert_dialog_set_detail(dialog, detail);
+
+	static const char* buttons[] = {"Ok", NULL};
+	gtk_alert_dialog_set_buttons(dialog, buttons);
+	gtk_alert_dialog_set_default_button(dialog, 0);
+
+	GMainLoop* loop = g_main_loop_new(NULL, FALSE);
+	gtk_alert_dialog_choose(dialog, parent, NULL, mesg_box_on_choose, loop);
+
+	g_main_loop_run(loop);
+	g_main_loop_unref(loop);
+	g_object_unref(dialog);
+}

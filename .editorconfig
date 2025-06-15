@@ -1,0 +1,25 @@
+# .editorconfig 파일 시작
+root = true
+
+[*]
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = tab
+indent_size = 4
+
+[*.{c,cc,cpp,h,hh,hpp}]
+charset = utf-8-bom
+end_of_line = crlf
+max_line_length = 120
+tab_width = 4
+
+[*.css]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+tab_width = 2
+
+[*.md]
+charset = utf-8
+trim_trailing_whitespace = false

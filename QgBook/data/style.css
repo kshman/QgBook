@@ -1,0 +1,31 @@
+/* 공통 */
+.bold-label {
+    font-weight: bold;
+    font-size: 14px;
+}
+
+/* ReadWindow */
+.height-separator {
+    min-height: 1px;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    background-color: @theme_fg_color;
+    background-image: none;
+}
+
+.label-menu-item {
+    color: #333;
+    font-weight: bold;
+}
+
+/* RenexDialog */
+.originalLabel {
+    border: 1px solid #cccccc;
+    border-radius: 4px;
+}
+
+.bookNameLabel {
+    border: 1px solid #ff8080;
+    border-radius: 4px;
+}
+

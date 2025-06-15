@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+빌드하는 법 (프로젝트 파일이 있는 곳에서)
+glib-compile-resources --generate-source --target=resg.c resg.xml
+
+MSVC의 경우 사전 빌드 이벤트에 넣기
+glib-compile-resources.exe --generate-source --sourcedir=$(ProjectDir) --target=$(ProjectDir)%(Filename).c %(FullPath)
+-->
+<gresources>
+  <gresource prefix="/qgbook">
+    <!-- 아이콘 -->
+    <file compressed="true">data/icon/directory.png</file>
+    <file compressed="true">data/icon/menus.png</file>
+    <file compressed="true">data/icon/move.png</file>
+    <file compressed="true">data/icon/painting.png</file>
+    <file compressed="true">data/icon/purutu.png</file>
+    <file compressed="true">data/icon/rename.png</file>
+    <file compressed="true">data/icon/view-mode-fit.png</file>
+    <file compressed="true">data/icon/view-mode-l2r.png</file>
+    <file compressed="true">data/icon/view-mode-r2l.png</file>
+
+    <!-- 이미지 -->
+    <file compressed="true">data/pix/housebari_head_128.jpg</file>
+    <file compressed="true">data/pix/no_image.png</file>
+
+    <!-- Glade UI 파일 -->
+    <!-- file alias="ui/main_window">data/ui/app_window.ui</file -->
+
+    <!-- 텍스트 파일 등 기타 리소스 -->
+    <file>data/style.css</file>
+    <file>data/lang/ko.txt</file>
+  </gresource>
+</gresources>
+

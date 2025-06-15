@@ -1,0 +1,22 @@
+# 한국말
+DgBook=두그책
+QgBook=큭책
+Yes=네
+No=아니오
+Ok=확인
+Open=열기
+Close=닫기
+View Mode=읽기 방향
+Zoom=늘려보기
+Settings=설정
+Exit=끝내기
+Image Quality=그림 품질
+[No Book]=[열린 책이 없어요]
+Fast Quality=빠른 품질
+Normal Quality=기본 품질
+High Quality=높은 품질
+Nearest Interpolation=근처값 보간
+Bilinear Interpolation=이중 선형 보간
+Fit Window=창에 크기 맞춤
+Left to Right=왼쪽에서 오른쪽으로
+Right to Left=오른쪽에서 왼쪽으로
