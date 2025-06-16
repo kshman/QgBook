@@ -98,6 +98,7 @@ ReadWindow* read_window_new(GtkApplication* app)
 
 	rw->window = gtk_application_window_new(app);
 	gtk_window_set_title(GTK_WINDOW(rw->window), _("QgBook"));
+	gtk_window_set_icon_name(GTK_WINDOW(rw->window), _("QgBook"));
 	gtk_window_set_default_size(GTK_WINDOW(rw->window), width, height);
 	gtk_widget_set_size_request(GTK_WIDGET(rw->window), 600, 400);
 	g_signal_connect(rw->window, "destroy", G_CALLBACK(signal_destroy), rw);

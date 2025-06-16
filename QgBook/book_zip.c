@@ -10,11 +10,16 @@ typedef struct BookZip
 } BookZip;
 
 static void bz_dispose(Book* book);
-static GBytes* bz_read_data(Book* book, int page);
+
+static GBytes *bz_read_data(Book* book, int page);
+
 static bool bz_can_delete(Book* book);
+
 static bool bz_delete(Book* book);
+
 static bool bz_move(Book* book, const char* move_filename);
-static gchar* bz_rename(Book* book, const char* new_filename);
+
+static gchar *bz_rename(Book* book, const char* new_filename);
 
 // ZIP책 함수 테이블
 static BookFunc bz_func =
@@ -28,7 +33,7 @@ static BookFunc bz_func =
 };
 
 // ZIP책 만들기
-Book* book_zip_new(const char* zip_path)
+Book *book_zip_new(const char* zip_path)
 {
 	// 먼저 ZIP파일 부터 확인
 	int err = 0;
@@ -57,8 +62,9 @@ Book* book_zip_new(const char* zip_path)
 		if (!doumi_is_image_file(s.name))
 			continue; // 이미지 파일이 아님
 
+		// 엔트리를 만들어 넣자고
 		PageEntry* e = g_new0(PageEntry, 1);
-		e->page = (int)i;
+		e->page = (int)bz->base.entries->len;
 		e->manage = (int)i;
 		e->name = g_strdup(s.name);
 		e->date = s.mtime;
@@ -81,7 +87,7 @@ static void bz_dispose(Book* book)
 	book_base_dispose(book);
 }
 
-static GBytes* bz_read_data(Book* book, int page)
+static GBytes *bz_read_data(Book* book, int page)
 {
 	BookZip* bz = (BookZip*)book;
 
@@ -89,28 +95,104 @@ static GBytes* bz_read_data(Book* book, int page)
 		return NULL; // 페이지 범위 벗어남
 
 	const PageEntry* entry = g_ptr_array_index(book->entries, page);
-	if (entry == NULL)
-		return NULL; // 페이지 항목이 없음
+	if (entry == NULL || page != entry->page)
+		return NULL; // 페이지 항목이 없거나 페이지 번호가 일치하지 않음
 
-	zip_file_t* zf = zip_fopen_index(bz->zip, page, 0);
+	zip_file_t* zf = zip_fopen_index(bz->zip, entry->manage, 0);
+	if (zf == NULL)
+		return NULL; // ZIP파일에서 항목 열기 실패
+
+	gpointer buf = g_malloc(entry->size);
+	zip_int64_t n = zip_fread(zf, buf, entry->size);
+
+	GBytes* ret = NULL;
+	if (n != entry->size)
+		g_free(buf); // 읽기 실패시 버퍼 해제
+	else
+	{
+		ret = g_bytes_new_take(buf, entry->size); // GBytes로 변환
+		if (ret == NULL)
+			g_log("BOOK-ZIP", G_LOG_LEVEL_ERROR, _("Failed to create page %d"), page);
+	}
+
+	zip_fclose(zf);
+	return ret;
 }
 
 static bool bz_can_delete(Book* book)
 {
-	return false;
+	// 원래 파일이 읽기 전용인가만 확인하자.
+	return doumi_is_file_readonly(book->filename);
 }
 
 static bool bz_delete(Book* book)
 {
-	return false;
+	BookZip* bz = (BookZip*)book;
+
+	if (bz->zip)
+	{
+		zip_close(bz->zip);
+		bz->zip = NULL;
+	}
+
+	GFile* file = g_file_new_for_path(book->filename);
+	bool res = !g_file_trash(file, NULL, NULL) && !g_file_delete(file, NULL, NULL);
+	g_object_unref(file);
+
+	if (!res)
+	{
+		// 허... 마지막으로 CRT함수를 써보자
+		if (remove(book->filename) != 0)
+			return false;
+	}
+
+	return true;
+}
+
+static bool bz_common_move(BookZip* bz, const char* src_path, const char* dst_path)
+{
+	if (bz->zip)
+	{
+		zip_close(bz->zip);
+		bz->zip = NULL;
+	}
+
+	GFile* src = g_file_new_for_path(src_path);
+	GFile* dst = g_file_new_for_path(dst_path);
+	bool res = g_file_move(src, dst, G_FILE_COPY_NONE, NULL, NULL, NULL, NULL);
+	g_object_unref(src);
+	g_object_unref(dst);
+
+	// 쓸만한 CRT함수가 없어서 이걸로 결과처리
+	return res;
 }
 
 static bool bz_move(Book* book, const char* move_filename)
 {
-	return false;
+	if (g_strcmp0(book->filename, move_filename) == 0)
+		return false;
+
+	if (g_file_test(move_filename, G_FILE_TEST_EXISTS))
+		return false; // 이미 존재하는 파일
+
+	return bz_common_move((BookZip*)book, book->filename, move_filename);
 }
 
-static gchar* bz_rename(Book* book, const char* new_filename)
+static gchar *bz_rename(Book* book, const char* new_filename)
 {
-	return NULL;
+	gchar* new_path = g_build_filename(book->dir_name, new_filename, NULL);
+
+	if (g_file_test(new_path, G_FILE_TEST_EXISTS))
+	{
+		g_free(new_path);
+		return NULL; // 이미 존재하는 파일
+	}
+
+	if (!bz_common_move((BookZip*)book, book->filename, new_path))
+	{
+		g_free(new_path);
+		return NULL; // 이름 바꾸기 실패
+	}
+
+	return new_path; // 새 경로 반환, 호출자가 해제해야 함;
 }

@@ -97,10 +97,11 @@ extern bool book_move_prev(Book* book, ViewMode mode);
 extern bool book_move_page(Book* book, int page);
 extern const PageEntry* book_get_entry(Book* book, int page);
 
-inline void book_dispose(Book* book) { book->func.dispose(book); }
-inline GBytes* book_read_data(Book* book, int page) { return book->func.read_data(book, page); }
-inline bool book_can_delete(Book* book) { return book->func.can_delete(book); }
-inline bool book_delete(Book* book) { return book->func.delete(book); }
-inline bool book_move(Book* book, const char* move_filename) { return book->func.move(book, move_filename); }
-inline gchar* book_rename(Book* book, const char* new_filename) { return book->func.rename(book, new_filename); }
+static inline void book_dispose(Book* book) { book->func.dispose(book); }
+static inline GBytes* book_read_data(Book* book, int page) { return book->func.read_data(book, page); }
+static inline bool book_can_delete(Book* book) { return book->func.can_delete(book); }
+static inline bool book_delete(Book* book) { return book->func.delete(book); }
+static inline bool book_move(Book* book, const char* move_filename) { return book->func.move(book, move_filename); }
+static inline gchar* book_rename(Book* book, const char* new_filename) { return book->func.rename(book, new_filename); }
 
+extern Book *book_zip_new(const char* zip_path);

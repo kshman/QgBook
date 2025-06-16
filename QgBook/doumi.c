@@ -32,6 +32,19 @@ bool doumi_is_image_file(const char* filename)
 	return false;
 }
 
+// ZIP 압축인가 확장자로 검사
+bool doumi_is_archive_zip(const char* filename)
+{
+	if (!filename) return false;
+	const char* ext = strrchr(filename, '.');
+	if (!ext) return false;
+	ext++; // '.' 다음부터
+	if (g_ascii_strcasecmp(ext, "zip") == 0 ||
+		g_ascii_strcasecmp(ext, "cbz") == 0)
+		return true;
+	return false;
+}
+
 // 문자열을 불린으로
 bool doumi_atob(const char* str)
 {
@@ -43,6 +56,24 @@ bool doumi_atob(const char* str)
 		g_ascii_strcasecmp(str, "cham") == 0)
 		return true;
 	return false;
+}
+
+// 읽기 전용 파일인가 확인
+bool doumi_is_file_readonly(const char* path)
+{
+	GFile* file = g_file_new_for_path(path);
+	GError* err = NULL;
+	GFileInfo* info = g_file_query_info(file, G_FILE_ATTRIBUTE_ACCESS_CAN_WRITE, G_FILE_QUERY_INFO_NONE, NULL, &err);
+	bool ret = true;
+	if (info)
+	{
+		bool can_write= g_file_info_get_attribute_boolean(info, G_FILE_ATTRIBUTE_ACCESS_CAN_WRITE);
+		ret = !can_write; // 쓸 수 있으면 읽기 전용 아님
+		g_object_unref(info);
+	}
+	g_object_unref(file);
+	if (err) g_error_free(err);
+	return ret;
 }
 
 // 문자열을 코드 문자열로 인코딩
@@ -204,7 +235,7 @@ int doumi_base64_decode(const char* encoded, char* value, size_t value_size)
 }
 
 // 압축 후 base64 인코딩, 결과를 동적 할당하여 반환
-char* doumi_huffman_encode(const char* input)
+char *doumi_huffman_encode(const char* input)
 {
 	g_return_val_if_fail(input != NULL, NULL);
 
@@ -214,14 +245,16 @@ char* doumi_huffman_encode(const char* input)
 	if (!comp_buf) return NULL;
 
 	int res = compress(comp_buf, &comp_bound, (const Bytef*)input, (uLong)in_len);
-	if (res != Z_OK) {
+	if (res != Z_OK)
+	{
 		g_free(comp_buf);
 		return NULL;
 	}
 
 	size_t b64_size = ((comp_bound + 2) / 3) * 4 + 1;
 	char* b64_buf = g_new(char, b64_size);
-	if (!b64_buf) {
+	if (!b64_buf)
+	{
 		g_free(comp_buf);
 		return NULL;
 	}
@@ -229,7 +262,8 @@ char* doumi_huffman_encode(const char* input)
 	int b64len = doumi_base64_encode((const char*)comp_buf, b64_buf, b64_size);
 	g_free(comp_buf);
 
-	if (b64len < 0) {
+	if (b64len < 0)
+	{
 		g_free(b64_buf);
 		return NULL;
 	}
@@ -238,7 +272,7 @@ char* doumi_huffman_encode(const char* input)
 }
 
 // base64 디코딩 후 압축 해제, 결과를 동적 할당하여 반환
-char* doumi_huffman_decode(const char* input)
+char *doumi_huffman_decode(const char* input)
 {
 	g_return_val_if_fail(input != NULL, NULL);
 
@@ -247,7 +281,8 @@ char* doumi_huffman_decode(const char* input)
 	if (comp_size <= 0) return NULL;
 	guint8* comp_buf = g_new(guint8, comp_size);
 	if (!comp_buf) return NULL;
-	if (doumi_base64_decode(input, (char*)comp_buf, comp_size) < 0) {
+	if (doumi_base64_decode(input, (char*)comp_buf, comp_size) < 0)
+	{
 		g_free(comp_buf);
 		return NULL;
 	}
@@ -258,7 +293,8 @@ char* doumi_huffman_decode(const char* input)
 	char* out_buf = g_new(char, out_size);
 
 	int res = uncompress((Bytef*)out_buf, &out_size, comp_buf, comp_size - 1); // -1: 널 종료자 제외
-	if (res == Z_BUF_ERROR) {
+	if (res == Z_BUF_ERROR)
+	{
 		// 버퍼가 부족하면 더 크게 재시도
 		out_size = comp_size * 16;
 		g_free(out_buf);
@@ -267,7 +303,8 @@ char* doumi_huffman_decode(const char* input)
 	}
 	g_free(comp_buf);
 
-	if (res != Z_OK) {
+	if (res != Z_OK)
+	{
 		g_free(out_buf);
 		return NULL;
 	}
@@ -293,7 +330,7 @@ const char *doumi_resource_path_format(const char* fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);
-	char* data = g_strdup_vprintf(fmt, args);  // NOLINT(clang-diagnostic-format-nonliteral)
+	char* data = g_strdup_vprintf(fmt, args); // NOLINT(clang-diagnostic-format-nonliteral)
 	va_end(args);
 	if (!g_str_has_prefix(data, "/"))
 	{

@@ -23,3 +23,11 @@ tab_width = 2
 [*.md]
 charset = utf-8
 trim_trailing_whitespace = false
+
+[*.cmake]
+indent_style = space
+indent_size = 4
+
+[CMakeLists.txt]
+indent_style = space
+indent_size = 4

@@ -72,7 +72,9 @@ extern uint64_t configs_get_actual_max_page_cache(void);
 
 // 도우미
 extern bool doumi_is_image_file(const char* filename);
+extern bool doumi_is_archive_zip(const char* filename);
 extern bool doumi_atob(const char* str);
+extern bool doumi_is_file_readonly(const char* path);
 extern int doumi_encode(const char* input, char* value, size_t value_size);
 extern int doumi_decode(const char* input, char* value, size_t value_size);
 extern int doumi_base64_encode(const char* input, char* value, size_t value_size);
