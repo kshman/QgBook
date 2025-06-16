@@ -67,7 +67,7 @@ bool doumi_is_file_readonly(const char* path)
 	bool ret = true;
 	if (info)
 	{
-		bool can_write= g_file_info_get_attribute_boolean(info, G_FILE_ATTRIBUTE_ACCESS_CAN_WRITE);
+		bool can_write = g_file_info_get_attribute_boolean(info, G_FILE_ATTRIBUTE_ACCESS_CAN_WRITE);
 		ret = !can_write; // 쓸 수 있으면 읽기 전용 아님
 		g_object_unref(info);
 	}
@@ -389,6 +389,34 @@ GdkTexture *doumi_load_gdk_texture(const void* buffer, size_t size)
 		g_clear_error(&err);
 	}
 	return tex;
+}
+
+// 서피스로 GdkTexture 만들기
+GdkTexture* doumi_texture_from_surface(cairo_surface_t* surface)
+{
+	GdkTexture* texture;
+	GBytes* bytes;
+
+	g_return_val_if_fail(cairo_surface_get_type (surface) == CAIRO_SURFACE_TYPE_IMAGE, NULL);
+	g_return_val_if_fail(cairo_image_surface_get_format (surface) == CAIRO_FORMAT_ARGB32, NULL);
+	g_return_val_if_fail(cairo_image_surface_get_width (surface) > 0, NULL);
+	g_return_val_if_fail(cairo_image_surface_get_height (surface) > 0, NULL);
+
+	bytes = g_bytes_new_with_free_func(cairo_image_surface_get_data(surface),
+									   cairo_image_surface_get_height(surface)
+									   * cairo_image_surface_get_stride(surface),
+									   (GDestroyNotify)cairo_surface_destroy,
+									   cairo_surface_reference(surface));
+
+	texture = gdk_memory_texture_new(cairo_image_surface_get_width(surface),
+									 cairo_image_surface_get_height(surface),
+									 GDK_MEMORY_A8R8G8B8,
+									 bytes,
+									 cairo_image_surface_get_stride(surface));
+
+	g_bytes_unref(bytes);
+
+	return texture;
 }
 
 

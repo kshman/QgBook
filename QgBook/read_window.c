@@ -2,6 +2,8 @@
 #include "book.h"
 #include "configs.h"
 
+#define NOTIFY_TIMEOUT 2000
+
 // 앞서 선언
 typedef struct ReadWindow ReadWindow;
 
@@ -21,7 +23,7 @@ G_DEFINE_TYPE(ReadDrawWidget, read_draw_widget, GTK_TYPE_WIDGET)
 
 static void read_draw_widget_snapshot(GtkWidget* widget, GtkSnapshot* snapshot);
 
-static GtkWidget* read_draw_widget_new(ReadWindow* rw)
+static GtkWidget *read_draw_widget_new(ReadWindow* rw)
 {
 	GtkWidget* widget = GTK_WIDGET(g_object_new(read_draw_widget_get_type(), NULL));
 	((ReadDrawWidget*)widget)->read_window = rw;
@@ -41,16 +43,17 @@ struct ReadWindow
 {
 	// 윈도우
 	GtkWidget* window;
-	GtkWidget* menu_quality_drop;
+
+	GtkWidget* title_label;
+	GtkWidget* info_label;
+
+	GtkWidget* menu_file_close;
 	GtkWidget* menu_zoom_check;
 	GtkWidget* menu_vmode_image;
 	GtkWidget* menu_vmode_radios[VIEW_MODE_MAX_VALUE];
 	GtkWidget* menu_vquality_radios[VIEW_QUALITY_MAX_VALUE];
 
 	GtkWidget* draw;
-	GtkWidget* title_label;
-	GtkWidget* info_label;
-	GtkWidget* direction_image;
 
 	// 책 상태
 	bool view_zoom;
@@ -60,45 +63,70 @@ struct ReadWindow
 	// 알림
 	guint32 notify_id;
 	char* notify_text;
+	PangoFontDescription* notify_font;
 };
 
 // 시그날 콜백
 static void signal_destroy(GtkWidget* widget, ReadWindow* rw);
+
 static gboolean signal_close_request(GtkWindow* window, ReadWindow* rw);
+
 static void signal_notify(GObject* object, GParamSpec* pspec, ReadWindow* rw);
 
 // 인터페이스 콜백
 static void menu_file_open_clicked(GtkButton* button, ReadWindow* rw);
+
 static void menu_file_close_clicked(GtkButton* button, ReadWindow* rw);
+
 static void menu_settings_click(GtkButton* button, ReadWindow* rw);
+
 static void menu_exit_click(GtkButton* button, ReadWindow* rw);
+
 static void menu_view_zoom_toggled(GtkCheckButton* button, ReadWindow* rw);
+
 static void menu_view_mode_toggled(GtkCheckButton* button, ReadWindow* rw);
+
 static void menu_view_mode_clicked(GtkButton* button, ReadWindow* rw);
+
 static void menu_view_quality_toggled(GtkCheckButton* button, ReadWindow* rw);
 
 // ReadWindow 함수
+static void reset_focus(ReadWindow* rw);
+
+static void toggle_fullscreen(ReadWindow* rw);
+
 static void update_view_zoom(ReadWindow* rw, bool zoom, bool redraw);
+
 static void update_view_mode(ReadWindow* rw, ViewMode mode, bool redraw);
+
 static void update_view_quality(ReadWindow* rw, ViewQuality quality, bool redraw);
 
+static void set_notify(ReadWindow* rw, const char* text, int timeout);
+
+static void reset_notify(ReadWindow* rw);
+
+static void paint_notify(ReadWindow* rw, cairo_t* cr, int width, int height);
+
+static void paint_notify2(ReadWindow* rw, GtkSnapshot* s, float width, float height);
+
 //
-ReadWindow* read_window_new(GtkApplication* app)
+ReadWindow *read_window_new(GtkApplication* app)
 {
 	ReadWindow* rw = g_new0(ReadWindow, 1);
 
-	// 설정을 위해 더미값 넣어놓기
+	// 첨에 UI 설정할 때 중복 호출 방지
 	rw->view_zoom = configs_get_bool(CONFIG_VIEW_ZOOM, true);
 	rw->view_mode = (ViewMode)configs_get_int(CONFIG_VIEW_MODE, true);
 	rw->view_quality = (ViewQuality)configs_get_int(CONFIG_VIEW_QUALITY, true);
 
-	// 윈도우
 	int width = configs_get_int(CONFIG_WINDOW_WIDTH, true);
 	int height = configs_get_int(CONFIG_WINDOW_HEIGHT, true);
 
+	// 윈도우
 	rw->window = gtk_application_window_new(app);
+
 	gtk_window_set_title(GTK_WINDOW(rw->window), _("QgBook"));
-	gtk_window_set_icon_name(GTK_WINDOW(rw->window), _("QgBook"));
+	//gtk_window_set_icon_name(GTK_WINDOW(rw->window), _("QgBook"));	// 아이콘이 없으면... 이상한게 앞에 추가된다
 	gtk_window_set_default_size(GTK_WINDOW(rw->window), width, height);
 	gtk_widget_set_size_request(GTK_WIDGET(rw->window), 600, 400);
 	g_signal_connect(rw->window, "destroy", G_CALLBACK(signal_destroy), rw);
@@ -108,6 +136,8 @@ ReadWindow* read_window_new(GtkApplication* app)
 	// 메인 메뉴, 헤더바에서 쓸거라 앞쪽에서 만들어 두자
 	GtkWidget* main_popover = gtk_popover_new();
 	GtkWidget* menu_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+	gtk_widget_set_margin_start(menu_box, 24);
+	gtk_widget_set_margin_end(menu_box, 24);
 
 	// 메뉴 - 파일 열기
 	GtkWidget* menu_file_open = gtk_button_new_with_label(_("Open"));
@@ -115,10 +145,10 @@ ReadWindow* read_window_new(GtkApplication* app)
 	gtk_box_append(GTK_BOX(menu_box), menu_file_open);
 
 	// 메뉴 - 파일 닫기
-	GtkWidget* menu_file_close = gtk_button_new_with_label(_("Close"));
-	gtk_widget_set_sensitive(menu_file_close, false); // 첨엔 파일이 없으니깐 비활성화
-	g_signal_connect(menu_file_close, "clicked", G_CALLBACK(menu_file_close_clicked), rw);
-	gtk_box_append(GTK_BOX(menu_box), menu_file_close);
+	rw->menu_file_close = gtk_button_new_with_label(_("Close"));
+	gtk_widget_set_sensitive(rw->menu_file_close, false); // 첨엔 파일이 없으니깐 비활성화
+	g_signal_connect(rw->menu_file_close, "clicked", G_CALLBACK(menu_file_close_clicked), rw);
+	gtk_box_append(GTK_BOX(menu_box), rw->menu_file_close);
 
 	gtk_box_append(GTK_BOX(menu_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
@@ -224,7 +254,6 @@ ReadWindow* read_window_new(GtkApplication* app)
 	GtkWidget* menu_button = gtk_menu_button_new();
 	GtkWidget* menu_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(res_get_texture(RES_ICON_MENUS)));
 	gtk_menu_button_set_child(GTK_MENU_BUTTON(menu_button), menu_icon);
-	//g_object_set(menu_button, "has-arrow", FALSE, NULL);
 	gtk_menu_button_set_popover(GTK_MENU_BUTTON(menu_button), main_popover);
 	gtk_header_bar_pack_end(GTK_HEADER_BAR(header), menu_button);
 
@@ -232,7 +261,6 @@ ReadWindow* read_window_new(GtkApplication* app)
 	GtkWidget* view_button = gtk_menu_button_new();
 	GtkWidget* view_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(res_get_texture(RES_ICON_PAINTING)));
 	gtk_menu_button_set_child(GTK_MENU_BUTTON(view_button), view_icon);
-	//g_object_set(menu_button, "has-arrow", FALSE, NULL);
 	gtk_menu_button_set_popover(GTK_MENU_BUTTON(view_button), view_popover);
 	gtk_header_bar_pack_end(GTK_HEADER_BAR(header), view_button);
 
@@ -249,15 +277,24 @@ ReadWindow* read_window_new(GtkApplication* app)
 
 	// DrawingArea
 	rw->draw = read_draw_widget_new(rw);
-	gtk_widget_set_hexpand(rw->draw, TRUE);
-	gtk_widget_set_vexpand(rw->draw, TRUE);
+	gtk_widget_set_can_focus(rw->draw, true);
+	gtk_widget_set_hexpand(rw->draw, true);
+	gtk_widget_set_vexpand(rw->draw, true);
 
 	// 메인 레이아웃
 	GtkWidget* main_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 	gtk_box_append(GTK_BOX(main_box), rw->draw);
 	gtk_window_set_child(GTK_WINDOW(rw->window), main_box);
 
+	// 팡고 글꼴
+	rw->notify_font = pango_font_description_from_string(
+			"Malgun Gothic, Apple SD Gothic Neo, Noto Sans CJK KR, Sans 20");
+
 	// 초기화를 끝내면서
+	reset_focus(rw);
+
+	// 테스트
+	set_notify(rw, "TEST!!! 테스트!!!", 60 * 10 * 1000); // 10분 동안 알림 표시
 
 	return rw;
 }
@@ -268,11 +305,23 @@ void read_window_show(const ReadWindow* rw)
 	gtk_widget_set_visible(rw->window, true);
 }
 
+// 포커스 리셋
+static void reset_focus(ReadWindow* rw)
+{
+	// 그리기 위젯에 포커스 주기
+	gtk_widget_grab_focus(rw->draw);
+}
+
 // 윈도우 종료되고 나서 콜백
 static void signal_destroy(GtkWidget* widget, ReadWindow* rw)
 {
+	// 책 지우기
+	// 페이지 다이얼로그 해제
+
 	if (rw->notify_text)
 		g_free(rw->notify_text);
+	if (rw->notify_font)
+		pango_font_description_free(rw->notify_font);
 
 	// 여기서 해제하면 된다구
 	g_free(rw);
@@ -288,19 +337,120 @@ static gboolean signal_close_request(GtkWindow* window, ReadWindow* rw)
 static void signal_notify(GObject* object, GParamSpec* pspec, ReadWindow* rw)
 {
 	const char* name = g_param_spec_get_name(pspec);
-	if (g_strcmp0(name, "default-width") == 0 || g_strcmp0(name, "default-height"))
+	if (g_strcmp0(name, "default-width") == 0 || g_strcmp0(name, "default-height") == 0)
 	{
-		// 윈도우 기본 크기 변경
-		int width, height;
-		gtk_window_get_default_size(GTK_WINDOW(rw->window), &width, &height);
-		configs_set_int(CONFIG_WINDOW_WIDTH, width, true);
-		configs_set_int(CONFIG_WINDOW_HEIGHT, height, true);
+		if (!gtk_window_is_maximized(GTK_WINDOW(rw->window)) && !gtk_window_is_fullscreen(GTK_WINDOW(rw->window)))
+		{
+			// 윈도우 기본 크기 변경
+			int width, height;
+			gtk_window_get_default_size(GTK_WINDOW(rw->window), &width, &height);
+			configs_set_int(CONFIG_WINDOW_WIDTH, width, true);
+			configs_set_int(CONFIG_WINDOW_HEIGHT, height, true);
+		}
 	}
-	else
+}
+
+// 파일 열기 누르기
+static void menu_file_open_clicked(GtkButton* button, ReadWindow* rw)
+{
+	// 메시지 박스 테스트
+	doumi_mesg_box(GTK_WINDOW(rw->window), "Only 1 instance allow", "Program will be exit");
+}
+
+// 파일 닫기 누르기
+static void menu_file_close_clicked(GtkButton* button, ReadWindow* rw) {}
+
+// 설정 누르기
+static void menu_settings_click(GtkButton* button, ReadWindow* rw) {}
+
+// 끝내기 누르기
+static void menu_exit_click(GtkButton* button, ReadWindow* rw)
+{
+	gtk_window_close(GTK_WINDOW(rw->window));
+}
+
+// 늘려 보기 토글
+static void menu_view_zoom_toggled(GtkCheckButton* button, ReadWindow* rw)
+{
+	const gboolean b = gtk_check_button_get_active(GTK_CHECK_BUTTON(rw->menu_zoom_check));
+	update_view_zoom(rw, b, true);
+}
+
+// 보기 모드 누르기
+static void menu_view_mode_clicked(GtkButton* button, ReadWindow* rw)
+{
+	const ViewMode mode =
+			rw->view_mode == VIEW_MODE_FIT
+				? VIEW_MODE_LEFT_TO_RIGHT
+				: rw->view_mode == VIEW_MODE_LEFT_TO_RIGHT
+					  ? VIEW_MODE_RIGHT_TO_LEFT
+					  :
+					  /*rw->view_mode == VIEW_MODE_RIGHT_TO_LEFT ? VIEW_MODE_FIT :*/ VIEW_MODE_FIT;
+	update_view_mode(rw, mode, true);
+}
+
+// 보기 방향 선택 바뀜
+static void menu_view_mode_toggled(GtkCheckButton* button, ReadWindow* rw)
+{
+	if (!gtk_check_button_get_active(button))
+		return;
+
+	ViewMode mode = (ViewMode)GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "tag"));
+	update_view_mode(rw, mode, true);
+}
+
+// 보기 품질 선택 바뀜
+static void menu_view_quality_toggled(GtkCheckButton* button, ReadWindow* rw)
+{
+	if (!gtk_check_button_get_active(button))
+		return;
+
+	ViewQuality quality = (ViewQuality)GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "tag"));
+	update_view_quality(rw, quality, true);
+}
+
+// 스냅샷 재정의로 책 윈도우를 그리자고
+static void read_draw_widget_snapshot(GtkWidget* widget, GtkSnapshot* snapshot)
+{
+	ReadDrawWidget* self = (ReadDrawWidget*)widget;
+	ReadWindow* rw = self->read_window;
+	float width = (float)gtk_widget_get_width(widget);
+	float height = (float)gtk_widget_get_height(widget);
+
+	// 스냅샷은 먼저 그린게 뒤에 그려진다.
+
+	// 배경
+	const GdkRGBA red = {0.1f, 0.1f, 0.1f, 1.0f};
+	gtk_snapshot_append_color(snapshot, &red, &GRAPHENE_RECT_INIT(0, 0, width, height));
+
+	// 카이로로 그릴거
+	cairo_t* cr = gtk_snapshot_append_cairo(snapshot, &GRAPHENE_RECT_INIT(0, 0, width, height));
+	if (cr)
 	{
-		// 그 밖에 이벤트가 뭔지 좀 봅시다
-		g_print(_("Property changed: %s\n"), name);
+		cairo_set_source_rgba(cr, 0.2, 0.4, 0.6, 1.0);
+		cairo_arc(cr, 200, 150, 100, 0, 2 * G_PI);
+		cairo_fill(cr);
+
+		// 알림 메시지 그리기
+		paint_notify(rw, cr, (int)width, (int)height);
+
+		cairo_destroy(cr);
 	}
+
+	// 로고 그리기
+	GdkTexture* logo = res_get_texture(RES_PIX_HOUSEBARI);
+	if (logo)
+	{
+		const float lw = (float)gdk_texture_get_width(logo);
+		const float lh = (float)gdk_texture_get_height(logo);
+		const float y = width > lh ? height - lh - 50.0f : 10.0f;
+		gtk_snapshot_append_texture(snapshot, logo, &GRAPHENE_RECT_INIT(width - lw - 100.0f, y, lw, lh));
+	}
+
+	// 책 그리기
+
+	// 알림 메시지 그리기
+	paint_notify2(rw, snapshot, width, height);
 }
 
 // 늘려보기 설정과 메뉴 처리
@@ -357,93 +507,133 @@ static void update_view_quality(ReadWindow* rw, ViewQuality quality, bool redraw
 	}
 }
 
-// 파일 열기 누르기
-static void menu_file_open_clicked(GtkButton* button, ReadWindow* rw)
+// 풀스크린!
+static void toggle_fullscreen(ReadWindow* rw)
 {
-	// 메시지 박스 테스트
-	doumi_mesg_box(GTK_WINDOW(rw->window), "Only 1 instance allow", "Program will be exit");
+	if (gtk_window_is_fullscreen(GTK_WINDOW(rw->window)))
+		gtk_window_unfullscreen(GTK_WINDOW(rw->window));
+	else
+		gtk_window_fullscreen(GTK_WINDOW(rw->window));
 }
 
-// 파일 닫기 누르기
-static void menu_file_close_clicked(GtkButton* button, ReadWindow* rw)
-{}
-
-// 설정 누르기
-static void menu_settings_click(GtkButton* button, ReadWindow* rw)
-{}
-
-// 끝내기 누르기
-static void menu_exit_click(GtkButton* button, ReadWindow* rw)
+// 알림 메시지 타이머 콜백
+static gboolean notify_timeout_callback(gpointer data)
 {
-	gtk_window_close(GTK_WINDOW(rw->window));
-}
-
-// 늘려 보기 토글
-static void menu_view_zoom_toggled(GtkCheckButton* button, ReadWindow* rw)
-{
-	const gboolean b = gtk_check_button_get_active(GTK_CHECK_BUTTON(rw->menu_zoom_check));
-	update_view_zoom(rw, b, true);
-}
-
-// 보기 모드 누르기
-static void menu_view_mode_clicked(GtkButton* button, ReadWindow* rw)
-{
-	const ViewMode mode =
-		rw->view_mode == VIEW_MODE_FIT ? VIEW_MODE_LEFT_TO_RIGHT :
-		rw->view_mode == VIEW_MODE_LEFT_TO_RIGHT ? VIEW_MODE_RIGHT_TO_LEFT :
-		/*rw->view_mode == VIEW_MODE_RIGHT_TO_LEFT ? VIEW_MODE_FIT :*/ VIEW_MODE_FIT;
-	update_view_mode(rw, mode, true);
-}
-
-// 보기 방향 선택 바뀜
-static void menu_view_mode_toggled(GtkCheckButton* button, ReadWindow* rw)
-{
-	if (!gtk_check_button_get_active(button))
-		return;
-
-	ViewMode mode = (ViewMode)GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "tag"));
-	update_view_mode(rw, mode, true);
-}
-
-// 보기 품질 선택 바뀜
-static void menu_view_quality_toggled(GtkCheckButton* button, ReadWindow* rw)
-{
-	if (!gtk_check_button_get_active(button))
-		return;
-
-	ViewQuality quality = (ViewQuality)GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "tag"));
-	update_view_quality(rw, quality, true);
-}
-
-// 스냅샷 재정의로 책 윈도우를 그리자고
-static void read_draw_widget_snapshot(GtkWidget* widget, GtkSnapshot* snapshot)
-{
-	ReadDrawWidget* self = (ReadDrawWidget*)widget;
-	ReadWindow* rw = self->read_window;
-	float width = (float)gtk_widget_get_width(widget);
-	float height = (float)gtk_widget_get_height(widget);
-
-	// 배경
-	const GdkRGBA red = { 0.1f, 0.1f, 0.1f, 1.0f };
-	gtk_snapshot_append_color(snapshot, &red, &GRAPHENE_RECT_INIT(0, 0, width, height));
-
-	// 카이로로 그릴거
-	cairo_t* cr = gtk_snapshot_append_cairo(snapshot, &GRAPHENE_RECT_INIT(0, 0, width, height));
-	if (cr)
+	ReadWindow* rw = (ReadWindow*)data;
+	if (rw->notify_text)
 	{
-		cairo_set_source_rgba(cr, 0.2, 0.4, 0.6, 1.0);
-		cairo_arc(cr, 200, 150, 100, 0, 2 * G_PI);
-		cairo_fill(cr);
-		cairo_destroy(cr);
+		g_free(rw->notify_text);
+		rw->notify_text = NULL;
+	}
+	rw->notify_id = 0;;
+	gtk_widget_queue_draw(rw->draw);
+	return false; // 타이머 제거
+}
+
+// 알림 메시지
+static void set_notify(ReadWindow* rw, const char* text, int timeout)
+{
+	if (rw->notify_text)
+		g_free(rw->notify_text);
+	rw->notify_text = text ? g_strdup(text) : NULL;
+
+	if (rw->notify_id != 0)
+	{
+		g_source_remove(rw->notify_id);
+		rw->notify_id = 0;
 	}
 
-	// 로고 그리기
-	GdkTexture* logo = res_get_texture(RES_PIX_HOUSEBARI);
-	if (logo)
-	{
-		const float lw = (float)gdk_texture_get_width(logo);
-		const float lh = (float)gdk_texture_get_height(logo);
-		const float y = width > lh ? height - lh - 50.0f : 10.0f;
-		gtk_snapshot_append_texture(snapshot, logo, &GRAPHENE_RECT_INIT(width - lw - 100.0f, y, lw, lh));
+	if (text != NULL)
+		rw->notify_id = g_timeout_add(timeout > 0 ? timeout : NOTIFY_TIMEOUT, notify_timeout_callback, rw);
+	gtk_widget_queue_draw(rw->draw);
+}
+
+// 알림 메시지 끄기
+static void reset_notify(ReadWindow* rw)
+{
+	set_notify(rw, NULL, 0);
+}
+
+// 알림 메시지 그리기
+static void paint_notify(ReadWindow* rw, cairo_t* cr, int width, int height)
+{
+	if (!rw->notify_text || rw->notify_text[0] == '\0')
+		return;
+
+	// 글꼴과 그릴 위치의 크기 계산
+	PangoLayout* layout = gtk_widget_create_pango_layout(GTK_WIDGET(rw->draw), rw->notify_text);
+	pango_layout_set_font_description(layout, rw->notify_font);
+	int text_width, text_height;
+	pango_layout_get_size(layout, &text_width, &text_height);
+	text_width /= PANGO_SCALE;
+	text_height /= PANGO_SCALE;
+
+	const double padding = 18;
+	const int x = (width - text_width) / 2;
+	const int y = (height - text_height) / 2;
+
+	// 배경 그리기
+	cairo_set_source_rgba(cr, 0.12, 0.12, 0.8, 0.8);
+	cairo_rectangle(cr, x - padding, y - padding, text_width + padding * 2, text_height + padding * 2);
+	cairo_fill_preserve(cr);
+	cairo_set_line_width(cr, 3);
+	cairo_set_source_rgba(cr, 1, 1, 0, 1.0);
+	cairo_stroke(cr);
+
+	// 텍스트 그리기
+	cairo_set_source_rgba(cr, 1, 1, 1, 1);
+	cairo_move_to(cr, x, y);
+	pango_cairo_show_layout(cr, layout);
+
+	g_object_unref(layout);
+}
+
+// 알림 메시지 그리기
+static void paint_notify2(ReadWindow* rw, GtkSnapshot* s, float width, float height)
+{
+	if (!rw->notify_text || rw->notify_text[0] == '\0')
+		return;
+
+	// 글꼴과 그릴 위치의 크기 계산
+	PangoLayout* layout = gtk_widget_create_pango_layout(GTK_WIDGET(rw->draw), rw->notify_text);
+	pango_layout_set_font_description(layout, rw->notify_font);
+	int text_width, text_height;
+	pango_layout_get_size(layout, &text_width, &text_height);
+	text_width /= PANGO_SCALE;
+	text_height /= PANGO_SCALE;
+
+	const int padding = 18;
+	int tex_w = text_width + padding * 2;
+	int tex_h = text_height + padding * 2;
+
+	cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, tex_w, tex_h);
+	cairo_t* cr = cairo_create(surface);
+
+	// 배경 및 테두리 그리기
+	cairo_set_source_rgba(cr, 0.12, 0.12, 0.8, 0.9);
+	cairo_rectangle(cr, 0, 0, tex_w, tex_h);
+	cairo_fill_preserve(cr);
+	cairo_set_line_width(cr, 3);
+	cairo_set_source_rgba(cr, 1, 1, 0, 1.0);
+	cairo_stroke(cr);
+
+	// 텍스트 그리기
+	cairo_set_source_rgba(cr, 1, 1, 1, 1);
+	cairo_move_to(cr, padding, padding);
+	pango_cairo_show_layout(cr, layout);
+
+	cairo_destroy(cr);
+	g_object_unref(layout);
+
+	// surface를 GdkTexture로 변환
+	GdkTexture* texture = doumi_texture_from_surface(surface);
+	cairo_surface_destroy(surface);
+
+	// snapshot에 append
+	if (texture) {
+		float x = (width - (float)tex_w) / 2.0f;
+		float y = (height - (float)tex_h) / 2.0f;
+		gtk_snapshot_append_texture(s, texture, &GRAPHENE_RECT_INIT(x, y, tex_w, tex_h));
+		g_object_unref(texture);
 	}
 }
