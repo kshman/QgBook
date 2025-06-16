@@ -51,6 +51,12 @@
     <ClCompile Include="resg.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="book.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="book_zip.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">

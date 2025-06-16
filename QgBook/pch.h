@@ -25,3 +25,5 @@
 #include <gio/gio.h>
 #include <sqlite3.h>
 #include <zlib.h>
+#include <zip.h>
+

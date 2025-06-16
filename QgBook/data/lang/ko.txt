@@ -20,3 +20,5 @@ Bilinear Interpolation=이중 선형 보간
 Fit Window=창에 크기 맞춤
 Left to Right=왼쪽에서 오른쪽으로
 Right to Left=오른쪽에서 왼쪽으로
+Failed to create page %d: %s=%d째 쪽을 만들지 못했어요: %s
+Failed to open ZIP file '%s': %s(%d)=ZIP 파일(%s)을 열지 못했어요: %s(%d)

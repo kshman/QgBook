@@ -705,3 +705,11 @@ void configs_free_moves(ConfigMove* moves, int count)
 	}
 	g_free(moves);
 }
+
+// 실제 최대 캐시 크기를 얻습니다.
+uint64_t configs_get_actual_max_page_cache(void)
+{
+	const ConfigCacheItem* item = cache_get_item(CONFIG_GENERAL_MAX_PAGE_CACHE);
+	int mb = item ? item->n : 230; // 원래 defs에서 가져와야 하는데 귀찮다
+	return (uint64_t)mb * 1024ULL * 1024ULL; // MB 단위로 변환
+}

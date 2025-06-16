@@ -152,6 +152,8 @@
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="book.c" />
+    <ClCompile Include="book_zip.c" />
     <ClCompile Include="configs.c" />
     <ClCompile Include="doumi.c" />
     <ClCompile Include="pch.c">

@@ -67,8 +67,11 @@ extern bool configs_set_move(const char* folder, const char* alias);
 extern bool configs_delete_move(const char* folder);
 extern void configs_free_moves(ConfigMove* moves, int count);
 
+extern uint64_t configs_get_actual_max_page_cache(void);
+
 
 // 도우미
+extern bool doumi_is_image_file(const char* filename);
 extern bool doumi_atob(const char* str);
 extern int doumi_encode(const char* input, char* value, size_t value_size);
 extern int doumi_decode(const char* input, char* value, size_t value_size);

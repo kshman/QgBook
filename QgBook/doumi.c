@@ -14,6 +14,24 @@ __declspec(dllexport) const wchar_t* doumi_utf8_to_wstr(const char* utf8)
 }
 #endif
 
+// 이미지 파일인가 확장자로 검사
+bool doumi_is_image_file(const char* filename)
+{
+	if (!filename) return false;
+	const char* ext = strrchr(filename, '.');
+	if (!ext) return false;
+	ext++; // '.' 다음부터
+	if (g_ascii_strcasecmp(ext, "jpg") == 0 ||
+		g_ascii_strcasecmp(ext, "webp") == 0 ||
+		g_ascii_strcasecmp(ext, "png") == 0 ||
+		g_ascii_strcasecmp(ext, "jpeg") == 0 ||
+		g_ascii_strcasecmp(ext, "gif") == 0 ||
+		g_ascii_strcasecmp(ext, "bmp") == 0 ||
+		g_ascii_strcasecmp(ext, "tiff") == 0)
+		return true; // 비교 순서는 자주 쓰는 순서로
+	return false;
+}
+
 // 문자열을 불린으로
 bool doumi_atob(const char* str)
 {
@@ -388,7 +406,6 @@ void doumi_unlock_program(void)
 	doumi_fd = 0;
 #endif
 }
-
 
 // 메시지 박스 선택 콜백
 static void mesg_box_on_choose(GObject* source_object, GAsyncResult* res, gpointer user_data)
