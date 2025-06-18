@@ -94,9 +94,9 @@ struct ReadWindow
 
 #pragma region 알림 메시지
 // 알림 메시지 타이머 콜백
-static gboolean notify_timeout_callback(gpointer data)
+static gboolean cb_notify_timeout(gpointer data)
 {
-	ReadWindow* rw = (ReadWindow*)data;
+	ReadWindow* rw = data;
 	if (rw->notify_text)
 	{
 		g_free(rw->notify_text);
@@ -108,7 +108,7 @@ static gboolean notify_timeout_callback(gpointer data)
 }
 
 // 알림 메시지
-static void set_notify(ReadWindow* rw, const char* text, int timeout)
+static void notify(ReadWindow* rw, const char* text, int timeout)
 {
 	if (rw->notify_text)
 		g_free(rw->notify_text);
@@ -121,7 +121,7 @@ static void set_notify(ReadWindow* rw, const char* text, int timeout)
 	}
 
 	if (text != NULL)
-		rw->notify_id = g_timeout_add(timeout > 0 ? timeout : NOTIFY_TIMEOUT, notify_timeout_callback, rw);
+		rw->notify_id = g_timeout_add(timeout > 0 ? timeout : NOTIFY_TIMEOUT, cb_notify_timeout, rw);
 	gtk_widget_queue_draw(rw->draw);
 }
 
@@ -270,20 +270,17 @@ static void update_book_info(ReadWindow* rw)
 #pragma endregion
 
 #pragma region 책 처리
-// 책 정리
-static void close_book(ReadWindow* rw)
+// 진짜 책 정리
+// 원래 close_book에 있던건데 종료할때 GTK 오류 메시지가 속출하여 따로 뺌
+static void finalize_book(ReadWindow* rw)
 {
 	if (rw->book != NULL)
 	{
-		int page = rw->book->cur_page - 1 >= rw->book->total_page ? 0: rw->book->cur_page;
+		int page = rw->book->cur_page - 1 >= rw->book->total_page ? 0 : rw->book->cur_page;
 		recently_set_page(rw->book->base_name, page);
 
 		book_dispose(rw->book);
 		rw->book = NULL;
-
-		gtk_label_set_text(GTK_LABEL(rw->info_label), "----");
-		gtk_label_set_text(GTK_LABEL(rw->title_label), _("[No Book]"));
-		gtk_widget_set_sensitive(rw->menu_file_close, false);
 	}
 
 	if (rw->page_left)
@@ -297,20 +294,121 @@ static void close_book(ReadWindow* rw)
 		g_object_unref(rw->page_right);
 		rw->page_right = NULL;
 	}
+}
+
+// 책 정리
+static void close_book(ReadWindow* rw)
+{
+	finalize_book(rw);
+
+	gtk_label_set_text(GTK_LABEL(rw->info_label), "----");
+	gtk_label_set_text(GTK_LABEL(rw->title_label), _("[No Book]"));
+	gtk_widget_set_sensitive(rw->menu_file_close, false);
 
 	gtk_widget_queue_draw(rw->draw);
 }
 
 // 책 열기
 // page가 0이상이면 해당 페이지로 열기
+// file은 호출한 쪽에서 처분할 것
 static void open_book(ReadWindow* rw, GFile* file, int page)
 {
+	const GFileType type = doumi_get_file_type_from_gfile(file);
+	if (type == G_FILE_TYPE_UNKNOWN || type == G_FILE_TYPE_DIRECTORY)
+	{
+		// 파일이 없거나
+		// 디렉토리면... 어떻게 하나
+		return;
+	}
+
+	gchar* path = g_file_get_path(file);
+	Book* book = NULL;
+
+	if (doumi_is_archive_zip(path))
+	{
+		book = book_zip_new(path);
+		if (book == NULL)
+			notify(rw, _("Unsupported archive file"), NOTIFY_TIMEOUT);
+	}
+	else
+	{
+		// 이미지 파일이거나
+		// 디렉토리거나
+		// 하면 좋겠는데 나중에
+
+		// 일단 오류 뿜뿜
+		notify(rw, _("Failed to open book"), NOTIFY_TIMEOUT);
+	}
+
+	g_free(path);
+
+	if (book == NULL)
+		return;
+
+	close_book(rw);	// 이 안에서 queue_draw가 호출되므로 아래쪽에서 안해도 된다
+
+	config_set_string(CONFIG_FILE_LAST_FILE, book->full_name, false);
+	config_set_string(CONFIG_FILE_LAST_DIRECTORY, book->dir_name, false);
+
+	rw->book = book;
+	book->cur_page = page < 0 ? recently_get_page(book->base_name) : page;
+
+	update_book_info(rw);
+	gtk_widget_set_sensitive(rw->menu_file_close, true);
+	// TODO: 여기서 쪽 정보를 읽어서 보관한다 => 	_pages = book.GetPageInfos().ToList();
+	// TODO: 여기서 쪽 그림을 준비한다
+	// TODO: 여기서 쪽 선택 다이얼로그를 준비한다
+}
+
+// 책 열기 대화상자 콜백
+static void cb_open_book_dialog(GObject* source_object, GAsyncResult* res, gpointer user_data)
+{
+	ReadWindow* rw = user_data;
+	GtkFileDialog* dialog = GTK_FILE_DIALOG(source_object);
+	GFile* file = gtk_file_dialog_open_finish(dialog, res, NULL);
+	if (file)
+	{
+		char* path = g_file_get_path(file);
+		if (path)
+		{
+			notify(rw, path, 0);
+			g_free(path);
+		}
+		open_book(rw, file, -1); // 페이지는 캐시에서 준비
+		g_object_unref(file);
+	}
+	g_object_unref(dialog);
 }
 
 // 책 열기 대화상자
+// 이 함수는 비동기로 동작하므로, 이 함수를 호출한 뒤에 뭐 하면 안된다
 static void open_book_dialog(ReadWindow* rw)
 {
+	GtkFileFilter* fall = doumi_file_filter_all();
+	GtkFileFilter* fzip = doumi_file_filter_zip();
+	GListStore* filters = g_list_store_new(GTK_TYPE_FILE_FILTER);
+	g_list_store_append(filters, fzip);
+	g_list_store_append(filters, fall);
 
+	GtkFileDialog* dialog = gtk_file_dialog_new();
+	gtk_file_dialog_set_title(dialog, _("Book open"));
+	gtk_file_dialog_set_modal(dialog, true);
+	gtk_file_dialog_set_filters(dialog, G_LIST_MODEL(filters));
+
+	char last[2048];
+	if (config_get_string(CONFIG_FILE_LAST_DIRECTORY, last, sizeof(last), false))
+	{
+		GFile* initial_folder = g_file_new_for_path(last);
+		if (g_file_query_exists(initial_folder, NULL))
+			gtk_file_dialog_set_initial_folder(dialog, initial_folder);
+		g_object_unref(initial_folder);
+	}
+
+	gtk_file_dialog_open(dialog, GTK_WINDOW(rw->window), NULL, cb_open_book_dialog, rw);
+
+	g_object_unref(filters);
+	g_object_unref(fall);
+	g_object_unref(fzip);
 }
 #pragma endregion
 
@@ -319,7 +417,8 @@ static void open_book_dialog(ReadWindow* rw)
 // 윈도우 종료되고 나서 콜백
 static void signal_destroy(GtkWidget* widget, ReadWindow* rw)
 {
-	// 책 지우기
+	finalize_book(rw);
+
 	// 페이지 다이얼로그 해제
 
 	if (rw->notify_text)
@@ -359,11 +458,11 @@ static gboolean signal_file_drop(GtkDropTarget* target, const GValue* value, dou
 		return false;
 
 	GFile* file = g_value_get_object(value);
-	char* path = g_file_get_path(file);
-	if (path)
+	if (file)
 	{
-		set_notify(rw, path, 0);
-		g_free(path);
+		open_book(rw, file, -1); // 페이지는 캐시에서 준비
+		// !!! 절대로 g_value_get_object로 얻은 값은 해제하면 안된다 !!!
+		//g_object_unref(file);
 	}
 
 	return true;
@@ -374,13 +473,13 @@ static gboolean signal_wheel_scroll(GtkEventControllerScroll* controller, double
 {
 	if (dy > 0)
 	{
-		//set_notify(rw, "Wheel Down", 1000);
+		//notify(rw, "Wheel Down", 1000);
 		// 예: 다음 페이지로 이동
 		// book_next_page(rw->book);
 	}
 	else if (dy < 0)
 	{
-		//set_notify(rw, "Wheel Up", 1000);
+		//notify(rw, "Wheel Up", 1000);
 		// 예: 이전 페이지로 이동
 		// book_prev_page(rw->book);
 	}
@@ -462,7 +561,7 @@ static gboolean signal_key_pressed(GtkEventControllerKey* controller,
 	const char* action = shortcut_lookup(value, state);
 	if (action != NULL)
 	{
-		ShortcutFunc func = g_hash_table_lookup(rw->scmd, action);
+		const ShortcutFunc func = (ShortcutFunc)g_hash_table_lookup(rw->scmd, action);
 		if (func != NULL)
 		{
 			func(rw);
@@ -535,7 +634,7 @@ static void menu_view_quality_toggled(GtkCheckButton* button, ReadWindow* rw)
 }
 
 // 단축키 - 아무것도 안함
-static void shortcut_on_none(ReadWindow* rw)
+static void shortcut_none(ReadWindow* rw)
 {
 #if _DEBUG
 	static int s_i = 0;
@@ -544,44 +643,44 @@ static void shortcut_on_none(ReadWindow* rw)
 }
 
 // 단축키 - 테스트
-static void shortcut_on_test(ReadWindow* rw)
+static void shortcut_test(ReadWindow* rw)
 {
-	set_notify(rw, _("TEST TEST TEST"), 5000);
+	notify(rw, _("TEST TEST TEST"), 5000);
 }
 
 // 단축키 - 끝내기
-static void shortcut_on_exit(ReadWindow* rw)
+static void shortcut_exit(ReadWindow* rw)
 {
 	gtk_window_close(GTK_WINDOW(rw->window));
 }
 
 // 단축키 - 끝내기인데 Escape
-static void shortcut_on_escape(ReadWindow* rw)
+static void shortcut_escape(ReadWindow* rw)
 {
 	if (config_get_bool(CONFIG_GENERAL_ESC_EXIT, true))
 		gtk_window_close(GTK_WINDOW(rw->window));
 }
 
 // 단축키 - 파일 열기
-static void shortcut_on_file_open(ReadWindow* rw)
+static void shortcut_file_open(ReadWindow* rw)
 {
 	open_book_dialog(rw);
 }
 
 // 단축키 - 파일 닫기
-static void shortcut_on_file_close(ReadWindow* rw)
+static void shortcut_file_close(ReadWindow* rw)
 {
 	close_book(rw);
 }
 
 // 단축키 - 설정
-static void shortcut_on_settings(ReadWindow* rw)
+static void shortcut_settings(ReadWindow* rw)
 {
 	// 언젠가는 해야하겠지...
 }
 
 // 단축키 - 풀스크린
-static void shortcut_on_fullscreen(ReadWindow* rw)
+static void shortcut_fullscreen(ReadWindow* rw)
 {
 	toggle_fullscreen(rw);
 }
@@ -843,19 +942,20 @@ ReadWindow* read_window_new(GtkApplication* app)
 		ShortcutFunc func;
 	} actions[] =
 	{
-		{ "test", shortcut_on_test },
-		{ "exit", shortcut_on_exit },
-		{ "escape", shortcut_on_escape },
-		{ "file_open", shortcut_on_file_open },
-		{ "file_close", shortcut_on_file_close },
-		{ "settings", shortcut_on_settings },
-		{ "fullscreen", shortcut_on_fullscreen },
+		{ "none", shortcut_none },
+		{ "test", shortcut_test },
+		{ "exit", shortcut_exit },
+		{ "escape", shortcut_escape },
+		{ "file_open", shortcut_file_open },
+		{ "file_close", shortcut_file_close },
+		{ "settings", shortcut_settings },
+		{ "fullscreen", shortcut_fullscreen },
 		{ NULL, NULL }
 	};
 
 	rw->scmd = g_hash_table_new(g_str_hash, g_str_equal);
 	for (const struct ShortcutAction* act = actions; act->name; ++act)
-		g_hash_table_insert(rw->scmd, act->name, act->func);
+		g_hash_table_insert(rw->scmd, act->name, (gpointer)act->func);
 
 	shortcut_register();
 #pragma endregion

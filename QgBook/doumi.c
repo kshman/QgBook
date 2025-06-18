@@ -3,6 +3,7 @@
 #include <sys/file.h>
 #include <fcntl.h>
 #endif
+#include "configs.h"
 #include "doumi.h"
 
 // 잠금 뮤텍스
@@ -520,4 +521,67 @@ void doumi_mesg_box(GtkWindow* parent, const char* text, const char* detail)
 	g_main_loop_run(loop);
 	g_main_loop_unref(loop);
 	g_object_unref(dialog);
+}
+
+// 파일 필터 - 모든 파일
+GtkFileFilter* doumi_file_filter_all(void)
+{
+	GtkFileFilter* filter = gtk_file_filter_new();
+	gtk_file_filter_set_name(filter, _("All files"));
+	gtk_file_filter_add_pattern(filter, "*");
+	return filter;
+}
+
+// 파일 필터 - 이미지 파일
+GtkFileFilter* doumi_file_filter_image(void)
+{
+	GtkFileFilter* filter = gtk_file_filter_new();
+	gtk_file_filter_set_name(filter, _("Image files"));
+	gtk_file_filter_add_pattern(filter, "*.jpg");
+	gtk_file_filter_add_pattern(filter, "*.jpeg");
+	gtk_file_filter_add_pattern(filter, "*.png");
+	gtk_file_filter_add_pattern(filter, "*.gif");
+	gtk_file_filter_add_pattern(filter, "*.bmp");
+	gtk_file_filter_add_pattern(filter, "*.webp");
+	gtk_file_filter_add_pattern(filter, "*.tiff");
+	gtk_file_filter_add_pattern(filter, "*.tif");
+#ifndef _WIN32
+	gtk_file_filter_add_mime_type(filter, "image/jpeg");   // .jpg, .jpeg
+	gtk_file_filter_add_mime_type(filter, "image/png");    // .png
+	gtk_file_filter_add_mime_type(filter, "image/gif");    // .gif
+	gtk_file_filter_add_mime_type(filter, "image/bmp");    // .bmp
+	gtk_file_filter_add_mime_type(filter, "image/webp");   // .webp
+	gtk_file_filter_add_mime_type(filter, "image/tiff");   // .tiff, .tif
+#endif
+	return filter;
+}
+
+// 파일 필터 - ZIP 압축 파일
+GtkFileFilter* doumi_file_filter_zip(void)
+{
+	GtkFileFilter* filter = gtk_file_filter_new();
+	gtk_file_filter_set_name(filter, _("ZIP archives"));
+	gtk_file_filter_add_pattern(filter, "*.zip");
+	gtk_file_filter_add_pattern(filter, "*.cbz");
+#ifndef _WIN32
+	gtk_file_filter_add_mime_type(filter, "application/zip"); // .zip
+	gtk_file_filter_add_mime_type(filter, "application/x-zip"); // .zip
+	gtk_file_filter_add_mime_type(filter, "application/x-cbz"); // .cbz
+	gtk_file_filter_add_mime_type(filter, "application/vnd.comicbook+zip"); // .cbz
+#endif
+	return filter;
+}
+
+// GFile로 이 파일이 어떤건지 알아보기
+// 파일이 없어도 G_FILE_TYPE_UNKNOWN 반환
+GFileType doumi_get_file_type_from_gfile(GFile* file)
+{
+	g_return_val_if_fail(file != NULL, G_FILE_TYPE_UNKNOWN);
+	if (!g_file_query_exists(file, NULL))
+		return G_FILE_TYPE_UNKNOWN; // 파일이 존재하지 않음
+	GFileInfo* info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_TYPE, G_FILE_QUERY_INFO_NONE, NULL, NULL);
+	if (!info) return G_FILE_TYPE_UNKNOWN;
+	GFileType type = g_file_info_get_file_type(info);
+	g_object_unref(info);
+	return type;
 }

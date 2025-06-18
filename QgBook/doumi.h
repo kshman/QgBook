@@ -51,5 +51,10 @@ extern char* doumi_load_resource_text(const char* resource_path, gsize* out_leng
 extern GdkPixbuf* doumi_load_gdk_pixbuf(const void* buffer, size_t size);
 extern GdkTexture* doumi_load_gdk_texture(const void* buffer, size_t size);
 extern GdkTexture* doumi_texture_from_surface(cairo_surface_t* surface);
+extern GtkFileFilter* doumi_file_filter_all(void);
+extern GtkFileFilter* doumi_file_filter_image(void);
+extern GtkFileFilter* doumi_file_filter_zip(void);
+extern GFileType doumi_get_file_type_from_gfile(GFile* file);
 
 extern void doumi_mesg_box(GtkWindow* parent, const char* text, const char* detail);
+

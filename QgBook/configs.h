@@ -75,6 +75,7 @@ extern bool config_init(void);
 extern void config_load_cache(void);
 extern void config_dispose(void);
 
+extern const char* config_get_string_ptr(ConfigKeys name, bool cache_only);
 extern bool config_get_string(ConfigKeys name, char* value, size_t value_size, bool cache_only);
 extern bool config_get_bool(ConfigKeys name, bool cache_only);
 extern gint32 config_get_int(ConfigKeys name, bool cache_only);

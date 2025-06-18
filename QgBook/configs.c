@@ -49,7 +49,7 @@ static void cache_item_free(gpointer ptr)
 
 // 캐시 얻기
 // key에 대한 범위 검사를 하지 않습니다.
-static ConfigCacheItem *cache_get_item(const ConfigKeys key)
+static ConfigCacheItem* cache_get_item(const ConfigKeys key)
 {
 	const struct ConfigDefinition* def = &config_defs[key];
 	return g_hash_table_lookup(cfgs.cache, def->name);
@@ -68,7 +68,7 @@ static void cache_set_item(const ConfigKeys key, const ConfigCacheItem* item)
 }
 
 // 타입을 자동으로 알아내서 캐시 얻기
-static const char *cache_auto_get_item(const ConfigKeys key, char* value, const size_t value_size)
+static const char* cache_auto_get_item(const ConfigKeys key, char* value, const size_t value_size)
 {
 	const struct ConfigDefinition* def = &config_defs[key];
 	const ConfigCacheItem* item = g_hash_table_lookup(cfgs.cache, def->name);
@@ -151,7 +151,7 @@ static void sql_free_error(char* err_msg)
 }
 
 // SQL을 엽니다
-static sqlite3 *sql_open(void)
+static sqlite3* sql_open(void)
 {
 	sqlite3* db;
 	if (sqlite3_open(cfgs.cfg_path, &db) == SQLITE_OK)
@@ -363,12 +363,12 @@ bool config_init(void)
 		!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS moves (folder TEXT PRIMARY KEY, alias TEXT);") ||
 		!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS recently (filename TEXT PRIMARY KEY, page INTEGER);") ||
 		!sql_exec_stmt(
-				db,
-				"CREATE TABLE IF NOT EXISTS bookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT, page INTEGER);")
+			db,
+			"CREATE TABLE IF NOT EXISTS bookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT, page INTEGER);")
 		||
 		!sql_exec_stmt(
-				db,
-				"CREATE TABLE IF NOT EXISTS shortcuts (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, alias TEXT);"))
+			db,
+			"CREATE TABLE IF NOT EXISTS shortcuts (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, alias TEXT);"))
 	{
 		sqlite3_close(db);
 		return false;
@@ -457,7 +457,7 @@ void config_load_cache(void)
 }
 
 // 설정에서 아이템을 가져옵니다
-static const ConfigCacheItem *config_get_item(ConfigKeys key, bool cache_only)
+static const ConfigCacheItem* config_get_item(ConfigKeys key, bool cache_only)
 {
 	if (key <= CONFIG_NONE || key >= CONFIG_MAX_VALUE)
 		return NULL;
@@ -466,13 +466,20 @@ static const ConfigCacheItem *config_get_item(ConfigKeys key, bool cache_only)
 	return cache_get_item(key);
 }
 
+// 설정에서 문자열을 가져오는데, 포인터로 반환합니다.
+const char* config_get_string_ptr(ConfigKeys name, bool cache_only)
+{
+	const ConfigCacheItem* item = config_get_item(name, cache_only);
+	return item == NULL || item->type != CACHE_TYPE_STRING ? NULL : item->s;
+}
+
 // 설정에서 문자열을 가져옵니다.
 bool config_get_string(ConfigKeys name, char* value, size_t value_size, bool cache_only)
 {
-	const ConfigCacheItem* item = config_get_item(name, cache_only);
-	if (item == NULL || item->type != CACHE_TYPE_STRING)
+	const char* str = config_get_string_ptr(name, cache_only);
+	if (str == NULL || *str == '\0')
 		return false;
-	g_strlcpy(value, item->s, value_size);
+	g_strlcpy(value, str, value_size);
 	return true;
 }
 
@@ -510,7 +517,7 @@ void config_set_string(ConfigKeys name, const char* value, bool cache_only)
 void config_set_bool(ConfigKeys name, bool value, bool cache_only)
 {
 	g_return_if_fail(name > CONFIG_NONE && name < CONFIG_MAX_VALUE);
-	const ConfigCacheItem item = {.b = value, .type = CACHE_TYPE_BOOL};
+	const ConfigCacheItem item = { .b = value, .type = CACHE_TYPE_BOOL };
 	cache_set_item(name, &item);
 	if (!cache_only)
 		sql_set_config(name);
@@ -520,7 +527,7 @@ void config_set_bool(ConfigKeys name, bool value, bool cache_only)
 void config_set_int(ConfigKeys name, gint32 value, bool cache_only)
 {
 	g_return_if_fail(name > CONFIG_NONE && name < CONFIG_MAX_VALUE);
-	const ConfigCacheItem item = {.n = value, .type = CACHE_TYPE_INT};
+	const ConfigCacheItem item = { .n = value, .type = CACHE_TYPE_INT };
 	cache_set_item(name, &item);
 	if (!cache_only)
 		sql_set_config(name);
@@ -530,7 +537,7 @@ void config_set_int(ConfigKeys name, gint32 value, bool cache_only)
 void config_set_long(ConfigKeys name, gint64 value, bool cache_only)
 {
 	g_return_if_fail(name > CONFIG_NONE && name < CONFIG_MAX_VALUE);
-	const ConfigCacheItem item = {.l = value, .type = CACHE_TYPE_LONG};
+	const ConfigCacheItem item = { .l = value, .type = CACHE_TYPE_LONG };
 	cache_set_item(name, &item);
 	if (!cache_only)
 		sql_set_config(name);
@@ -615,7 +622,7 @@ bool recently_set_page(const char* filename, int page)
 }
 
 // 책 이동 위치를 얻습니다. 반환값은 config_free_moves으로 해제해야 합니다.
-MoveLocation *movloc_get_all(int* ret_count)
+MoveLocation* movloc_get_all(int* ret_count)
 {
 	g_return_val_if_fail(ret_count != NULL, NULL);
 
@@ -733,7 +740,7 @@ void movloc_free(MoveLocation* moves, int count)
 }
 
 // 단축키 만들기
-static gint64 *convert_shortcut(const char* alias)
+static gint64* convert_shortcut(const char* alias)
 {
 	gint64 ret = 0;
 	GtkShortcutTrigger* trigger = gtk_shortcut_trigger_parse_string(alias);
@@ -793,7 +800,7 @@ void shortcut_register(void)
 }
 
 // 키 입력값으로 단축키 명령 얻기
-const char *shortcut_lookup(const guint key_val, const GdkModifierType key_state)
+const char* shortcut_lookup(const guint key_val, const GdkModifierType key_state)
 {
 	const gint64 key = ((gint64)key_state << 32) | key_val; // 상위 32비트에 상태, 하위 32비트에 키값
 	const char* action = g_hash_table_lookup(cfgs.shortcut, &key);
