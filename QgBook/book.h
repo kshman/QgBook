@@ -1,51 +1,8 @@
 ﻿#pragma once
 
-// 앞서 정의
+#include "defs.h"
+
 typedef struct Book Book;
-
-// 수평 정렬 방식을 나타내는 열거형입니다.
-typedef enum HorizAlign
-{
-	HORIZ_ALIGN_LEFT,
-	HORIZ_ALIGN_CENTER,
-	HORIZ_ALIGN_RIGHT,
-} HorizAlign;
-
-// 책 읽는 방향을 나타내는 열거형입니다.
-typedef enum ViewMode
-{
-	VIEW_MODE_FIT,
-	VIEW_MODE_LEFT_TO_RIGHT,
-	VIEW_MODE_RIGHT_TO_LEFT,
-	VIEW_MODE_MAX_VALUE,
-} ViewMode;
-
-// 이미지 품질 수준을 나타내는 열거형입니다.
-typedef enum ViewQuality
-{
-	VIEW_QUALITY_FAST,
-	VIEW_QUALITY_DEFAULT,
-	VIEW_QUALITY_HIGH,
-	VIEW_QUALITY_NEAREST,
-	VIEW_QUALITY_BILINEAR,
-	VIEW_QUALITY_MAX_VALUE,
-} ViewQuality;
-
-// 책의 탐색 및 제어 동작을 나타내는 열거형입니다.
-typedef enum BookControl
-{
-	BOOK_CTRL_PREV,
-	BOOK_CTRL_NEXT,
-	BOOK_CTRL_FIRST,
-	BOOK_CTRL_LAST,
-	BOOK_CTRL_10_PREV,
-	BOOK_CTRL_10_NEXT,
-	BOOK_CTRL_MINUS,
-	BOOK_CTRL_PLUS,
-	BOOK_CTRL_SCAN_PREV,
-	BOOK_CTRL_SCAN_NEXT,
-	BOOK_CTRL_SELECT,
-} BookControl;
 
 // 페이지 엔트리
 typedef struct PageEntry
@@ -80,9 +37,9 @@ struct Book
 	//GHashTable* cache; // 일단 캐시 사용 안함
 	GPtrArray* entries;
 
-	gchar* filename;
-	gchar* base_name;
-	gchar* dir_name;
+	gchar* full_name;	// 전체 경로
+	gchar* base_name;	// 파일 이름만
+	gchar* dir_name;	// 디렉토리 이름
 
 	int cur_page;
 	int total_page;

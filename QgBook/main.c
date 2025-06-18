@@ -1,5 +1,6 @@
 ﻿#include "pch.h"
 #include "configs.h"
+#include "doumi.h"
 
 /* main.c - 큭책 프로그램의 진입점
  *
@@ -39,7 +40,7 @@ GdkTexture* res_get_view_mode_texture(ViewMode mode)
 static void app_activate(GtkApplication* app, gpointer user_data)
 {
 	// 설정 캐시
-	configs_load_cache();
+	config_load_cache();
 
 	// 리소스 텍스쳐
 	static const char* s_res_filenames[RES_MAX_VALUE] =
@@ -125,13 +126,13 @@ int main(int argc, char** argv)
 	g_resources_register(resg_get_resource());
 
 	// 설정
-	if (!configs_init())
+	if (!config_init())
 		return 1; // 초기 설정 실패 시 종료
 
 	// 한번만 실행 확인
-	if (configs_get_bool(CONFIG_GENERAL_RUN_ONCE, true) && !doumi_lock_program())
+	if (config_get_bool(CONFIG_GENERAL_RUN_ONCE, true) && !doumi_lock_program())
 	{
-		configs_dispose();
+		config_dispose();
 		return 2;
 	}
 
@@ -144,6 +145,6 @@ int main(int argc, char** argv)
 	g_object_unref(app);
 
 	// 정리
-	configs_dispose();
+	config_dispose();
 	return status;
 }

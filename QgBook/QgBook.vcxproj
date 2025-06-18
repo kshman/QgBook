@@ -155,6 +155,8 @@
     <ClCompile Include="book.c" />
     <ClCompile Include="book_zip.c" />
     <ClCompile Include="configs.c" />
+    <ClCompile Include="configs_def.c" />
+    <ClCompile Include="configs_ss.c" />
     <ClCompile Include="doumi.c" />
     <ClCompile Include="pch.c">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -170,6 +172,8 @@
   <ItemGroup>
     <ClInclude Include="book.h" />
     <ClInclude Include="configs.h" />
+    <ClInclude Include="defs.h" />
+    <ClInclude Include="doumi.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="sqlite\sqlite3.h" />
     <ClInclude Include="sqlite\sqlite3ext.h" />

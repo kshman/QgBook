@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "configs.h"
 #include "book.h"
+#include "doumi.h"
 
 // ZIP으로 된 책
 typedef struct BookZip
@@ -122,7 +123,7 @@ static GBytes *bz_read_data(Book* book, int page)
 static bool bz_can_delete(Book* book)
 {
 	// 원래 파일이 읽기 전용인가만 확인하자.
-	return doumi_is_file_readonly(book->filename);
+	return doumi_is_file_readonly(book->full_name);
 }
 
 static bool bz_delete(Book* book)
@@ -135,14 +136,14 @@ static bool bz_delete(Book* book)
 		bz->zip = NULL;
 	}
 
-	GFile* file = g_file_new_for_path(book->filename);
+	GFile* file = g_file_new_for_path(book->full_name);
 	bool res = !g_file_trash(file, NULL, NULL) && !g_file_delete(file, NULL, NULL);
 	g_object_unref(file);
 
 	if (!res)
 	{
 		// 허... 마지막으로 CRT함수를 써보자
-		if (remove(book->filename) != 0)
+		if (remove(book->full_name) != 0)
 			return false;
 	}
 
@@ -169,13 +170,13 @@ static bool bz_common_move(BookZip* bz, const char* src_path, const char* dst_pa
 
 static bool bz_move(Book* book, const char* move_filename)
 {
-	if (g_strcmp0(book->filename, move_filename) == 0)
+	if (g_strcmp0(book->full_name, move_filename) == 0)
 		return false;
 
 	if (g_file_test(move_filename, G_FILE_TEST_EXISTS))
 		return false; // 이미 존재하는 파일
 
-	return bz_common_move((BookZip*)book, book->filename, move_filename);
+	return bz_common_move((BookZip*)book, book->full_name, move_filename);
 }
 
 static gchar *bz_rename(Book* book, const char* new_filename)
@@ -188,7 +189,7 @@ static gchar *bz_rename(Book* book, const char* new_filename)
 		return NULL; // 이미 존재하는 파일
 	}
 
-	if (!bz_common_move((BookZip*)book, book->filename, new_path))
+	if (!bz_common_move((BookZip*)book, book->full_name, new_path))
 	{
 		g_free(new_path);
 		return NULL; // 이름 바꾸기 실패

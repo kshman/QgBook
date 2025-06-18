@@ -23,3 +23,7 @@ Right to Left=오른쪽에서 왼쪽으로
 Failed to create page %d: %s=%d째 쪽을 만들지 못했어요: %s
 Failed to open ZIP file '%s': %s(%d)=ZIP 파일(%s)을 열지 못했어요: %s(%d)
 Failed to create page %d==%d째 쪽을 만들지 못했어요
+TEST TEST TEST=테스트! テスト！
+no action: %d=동작이 없어요: %d:
+Book open=책 열기
+Close book=열린 책 닫기

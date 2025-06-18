@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "configs.h"
 #include "book.h"
+#include "doumi.h"
 
 // 페이지 정보 제거
 static void page_entry_free(gpointer ptr)
@@ -16,9 +17,9 @@ void book_base_init(Book* book, const char* filename)
 {
 	book->entries = g_ptr_array_new_with_free_func(page_entry_free);
 
-	book->filename = g_strdup(filename);
-	book->dir_name = g_path_get_dirname(filename);
+	book->full_name = g_strdup(filename);
 	book->base_name = g_path_get_basename(filename);
+	book->dir_name = g_path_get_dirname(filename);
 }
 
 // 책 해제
@@ -26,12 +27,12 @@ void book_base_dispose(Book* book)
 {
 	if (book->entries)
 		g_ptr_array_free(book->entries, TRUE);
-	if (book->filename)
-		g_free(book->filename);
-	if (book->dir_name)
-		g_free(book->dir_name);
+	if (book->full_name)
+		g_free(book->full_name);
 	if (book->base_name)
 		g_free(book->base_name);
+	if (book->dir_name)
+		g_free(book->dir_name);
 	g_free(book);
 }
 

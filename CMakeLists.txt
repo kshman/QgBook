@@ -96,8 +96,8 @@ add_dependencies(QgBook generate_gresource)
 # 아이콘 설치
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
     install(
-            FILES "${CMAKE_SOURCE_DIR}/QgBook/data/DuView48.png"
+            FILES "${CMAKE_SOURCE_DIR}/QgBook/data/qg-book-48.png"
             DESTINATION "${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/48x48/apps/"
-            RENAME "QgBook.png"
+            RENAME "qgbook.png"
     )
 endif ()

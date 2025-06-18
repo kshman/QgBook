@@ -57,6 +57,12 @@
     <ClCompile Include="book_zip.c">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="configs_def.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="configs_ss.c">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -72,6 +78,12 @@
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="book.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="defs.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="doumi.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
   </ItemGroup>

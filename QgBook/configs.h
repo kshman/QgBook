@@ -1,7 +1,5 @@
 ﻿#pragma once
 
-#include "book.h"
-
 // 설정 키
 typedef enum ConfigKeys
 {
@@ -38,79 +36,71 @@ typedef enum ConfigKeys
 	CONFIG_MAX_VALUE, // 최대 값 (마지막 값은 반드시 이 값을 사용해야 함)
 } ConfigKeys;
 
+// 설정 캐시 아이템의 변수 타입
+typedef enum CacheType
+{
+	CACHE_TYPE_UNKNOWN,    // 알 수 없는 타입
+	CACHE_TYPE_INT,        // 정수형
+	CACHE_TYPE_LONG,       // 긴 정수형
+	CACHE_TYPE_BOOL,       // 불린형
+	CACHE_TYPE_DOUBLE,     // 실수형
+	CACHE_TYPE_STRING,     // 문자열
+} CacheType;
+
+// 설정 항목 정의
+typedef struct ConfigDefinition
+{
+	const char* name;		// 설정 이름
+	const char* value;		// 설정 초기값
+	CacheType type;			// 설정 타입
+} ConfigDefinition;
+
+// 단축키 정의
+typedef struct ShortcutDefinition
+{
+	const char* action;		// 단축키가 적용되는 액션 이름
+	const char* alias;		// 단축키 키 문자열 (예: <Control>x, F8 등)
+} ShortcutDefinition;
+
 // 이동 위치의 별명과 디렉토리
-typedef struct ConfigMove
+typedef struct MoveLocation
 {
-	char* alias; // 별명
-	char* folder; // 디렉토리
-} ConfigMove;
-
-extern bool configs_init(void);
-extern void configs_load_cache(void);
-extern void configs_dispose(void);
-
-extern const char* configs_lookup_lang(const char* key);
-#define _(x) configs_lookup_lang(x)
-
-extern bool configs_get_string(ConfigKeys name, char* value, size_t value_size, bool cache_only);
-extern bool configs_get_bool(ConfigKeys name, bool cache_only);
-extern gint32 configs_get_int(ConfigKeys name, bool cache_only);
-extern gint64 configs_get_long(ConfigKeys name, bool cache_only);
-
-extern void configs_set_string(ConfigKeys name, const char* value, bool cache_only);
-extern void configs_set_bool(ConfigKeys name, bool value, bool cache_only);
-extern void configs_set_int(ConfigKeys name, gint32 value, bool cache_only);
-extern void configs_set_long(ConfigKeys name, gint64 value, bool cache_only);
-
-extern ConfigMove* configs_get_moves(int* ret_count);
-extern bool configs_set_move(const char* folder, const char* alias);
-extern bool configs_delete_move(const char* folder);
-extern void configs_free_moves(ConfigMove* moves, int count);
-
-extern uint64_t configs_get_actual_max_page_cache(void);
+	char* alias;			// 별명
+	char* folder;			// 디렉토리
+} MoveLocation;
 
 
-// 도우미
-extern bool doumi_is_image_file(const char* filename);
-extern bool doumi_is_archive_zip(const char* filename);
-extern bool doumi_atob(const char* str);
-extern bool doumi_is_file_readonly(const char* path);
-extern int doumi_encode(const char* input, char* value, size_t value_size);
-extern int doumi_decode(const char* input, char* value, size_t value_size);
-extern int doumi_base64_encode(const char* input, char* value, size_t value_size);
-extern int doumi_base64_decode(const char* input, char* value, size_t value_size);
-extern char* doumi_huffman_encode(const char* input);
-extern char* doumi_huffman_decode(const char* input);
+// 설정 관련 함수들
+extern bool config_init(void);
+extern void config_load_cache(void);
+extern void config_dispose(void);
 
-extern const char* doumi_resource_path(const char* path);
-extern const char* doumi_resource_path_format(const char* fmt, ...);
-extern char* doumi_load_resource_text(const char* resource_path, gsize* out_length);
-extern GdkPixbuf* doumi_load_gdk_pixbuf(const void* buffer, size_t size);
-extern GdkTexture* doumi_load_gdk_texture(const void* buffer, size_t size);
-extern GdkTexture* doumi_texture_from_surface(cairo_surface_t* surface);
+extern bool config_get_string(ConfigKeys name, char* value, size_t value_size, bool cache_only);
+extern bool config_get_bool(ConfigKeys name, bool cache_only);
+extern gint32 config_get_int(ConfigKeys name, bool cache_only);
+extern gint64 config_get_long(ConfigKeys name, bool cache_only);
 
-extern bool doumi_lock_program(void);
-extern void doumi_unlock_program(void);
+extern void config_set_string(ConfigKeys name, const char* value, bool cache_only);
+extern void config_set_bool(ConfigKeys name, bool value, bool cache_only);
+extern void config_set_int(ConfigKeys name, gint32 value, bool cache_only);
+extern void config_set_long(ConfigKeys name, gint64 value, bool cache_only);
 
-extern void doumi_mesg_box(GtkWindow* parent, const char* text, const char* detail);
+extern uint64_t config_get_actual_max_page_cache(void);
 
+// 최근 파일
+extern int recently_get_page(const char* filename);
+extern bool recently_set_page(const char* filename, int page);
 
-// 리소스
-typedef enum ResKeys
-{
-	RES_PIX_NO_IMAGE,
-	RES_PIX_HOUSEBARI,
-	RES_ICON_DIRECTORY,
-	RES_ICON_MENUS,
-	RES_ICON_MOVE,
-	RES_ICON_PAINTING,
-	RES_ICON_PURUTU,
-	RES_ICON_RENAME,
-	RES_ICON_VIEW_MODE_FIT,
-	RES_ICON_VIEW_MODE_L2R,
-	RES_ICON_VIEW_MODE_R2L,
-	RES_MAX_VALUE,
-} ResKeys;
+// 이동 위치
+extern MoveLocation* movloc_get_all(int* ret_count);
+extern bool movloc_set(const char* folder, const char* alias);
+extern bool movloc_delete(const char* folder);
+extern void movloc_free(MoveLocation* moves, int count);
 
-extern GdkTexture* res_get_texture(ResKeys key);
-extern GdkTexture* res_get_view_mode_texture(ViewMode mode);
+// 단축키
+extern void shortcut_register(void);
+extern const char* shortcut_lookup(const guint key_val, const GdkModifierType key_state);
+
+// 언어
+extern const char* locale_lookup(const char* key);
+#define _(x) locale_lookup(x)
