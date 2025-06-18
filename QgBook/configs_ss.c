@@ -12,6 +12,8 @@ ShortcutDefinition shortcut_defs[] =
 	{ "settings", "F12" },
 	{ "fullscreen", "f" },
 	{ "fullscreen", "<Alt>Return" },
+	{ "open_last_book", "<Control><Shift>x" },
+	{ "open_last_book", "<Shift>F3" },
 	// 아래 널이 없으면 프로그램은 죽소
 	{ NULL, NULL }
 };

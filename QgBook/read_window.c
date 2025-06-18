@@ -78,7 +78,7 @@ struct ReadWindow
 
 	// 알림
 	guint32 notify_id;
-	char* notify_text;
+	char notify_text[260];
 	PangoFontDescription* notify_font;
 
 	// 책 상태
@@ -97,22 +97,19 @@ struct ReadWindow
 static gboolean cb_notify_timeout(gpointer data)
 {
 	ReadWindow* rw = data;
-	if (rw->notify_text)
-	{
-		g_free(rw->notify_text);
-		rw->notify_text = NULL;
-	}
+	rw->notify_text[0] = '\0'; // 알림 메시지 초기화
 	rw->notify_id = 0;
 	gtk_widget_queue_draw(rw->draw);
 	return false; // 타이머 제거
 }
 
 // 알림 메시지
-static void notify(ReadWindow* rw, const char* text, int timeout)
+static void notify(ReadWindow* rw, int timeout, const char* fmt, ...)
 {
-	if (rw->notify_text)
-		g_free(rw->notify_text);
-	rw->notify_text = text ? g_strdup(text) : NULL;
+	va_list ap;
+	va_start(ap, fmt);
+	g_vsnprintf(rw->notify_text, sizeof(rw->notify_text), fmt, ap);  // NOLINT(clang-diagnostic-format-nonliteral)
+	va_end(ap);
 
 	if (rw->notify_id != 0)
 	{
@@ -120,7 +117,7 @@ static void notify(ReadWindow* rw, const char* text, int timeout)
 		rw->notify_id = 0;
 	}
 
-	if (text != NULL)
+	if (rw->notify_text[0] != '\0')
 		rw->notify_id = g_timeout_add(timeout > 0 ? timeout : NOTIFY_TIMEOUT, cb_notify_timeout, rw);
 	gtk_widget_queue_draw(rw->draw);
 }
@@ -128,7 +125,7 @@ static void notify(ReadWindow* rw, const char* text, int timeout)
 // 알림 메시지 그리기
 static void paint_notify(ReadWindow* rw, GtkSnapshot* s, float width, float height)
 {
-	if (!rw->notify_text || rw->notify_text[0] == '\0')
+	if (rw->notify_text[0] == '\0')
 		return;
 
 	// 글꼴과 그릴 위치의 크기 계산
@@ -186,6 +183,14 @@ static void reset_focus(ReadWindow* rw)
 	gtk_widget_grab_focus(rw->draw);
 }
 
+// 키보드 리셋
+// 다이얼로그처럼 키보드 입력이 전환되는 애들은 호출하는게 좋다
+static void reset_key(ReadWindow* rw)
+{
+	rw->key_val = 0;
+	rw->key_state = 0;
+}
+
 // 풀스크린!
 static void toggle_fullscreen(ReadWindow* rw)
 {
@@ -210,7 +215,7 @@ static void update_view_zoom(ReadWindow* rw, bool zoom, bool redraw)
 		gtk_widget_queue_draw(rw->draw);
 }
 
-// 보기 모드 설정과 메뉴 처리
+// 읽기 방향 설정과 메뉴 처리
 static void update_view_mode(ReadWindow* rw, ViewMode mode, bool redraw)
 {
 	if (rw->view_mode == mode)
@@ -328,7 +333,7 @@ static void open_book(ReadWindow* rw, GFile* file, int page)
 	{
 		book = book_zip_new(path);
 		if (book == NULL)
-			notify(rw, _("Unsupported archive file"), NOTIFY_TIMEOUT);
+			notify(rw, 0, _("Unsupported archive file"));
 	}
 	else
 	{
@@ -337,13 +342,13 @@ static void open_book(ReadWindow* rw, GFile* file, int page)
 		// 하면 좋겠는데 나중에
 
 		// 일단 오류 뿜뿜
-		notify(rw, _("Failed to open book"), NOTIFY_TIMEOUT);
+		notify(rw, 0, _("Failed to open book"));
 	}
 
 	g_free(path);
 
 	if (book == NULL)
-		return;
+		return; // 오류 메시지는 오류 난데서 표시하고 여기서는 그냥 나감
 
 	close_book(rw);	// 이 안에서 queue_draw가 호출되므로 아래쪽에서 안해도 된다
 
@@ -355,7 +360,6 @@ static void open_book(ReadWindow* rw, GFile* file, int page)
 
 	update_book_info(rw);
 	gtk_widget_set_sensitive(rw->menu_file_close, true);
-	// TODO: 여기서 쪽 정보를 읽어서 보관한다 => 	_pages = book.GetPageInfos().ToList();
 	// TODO: 여기서 쪽 그림을 준비한다
 	// TODO: 여기서 쪽 선택 다이얼로그를 준비한다
 }
@@ -368,12 +372,6 @@ static void cb_open_book_dialog(GObject* source_object, GAsyncResult* res, gpoin
 	GFile* file = gtk_file_dialog_open_finish(dialog, res, NULL);
 	if (file)
 	{
-		char* path = g_file_get_path(file);
-		if (path)
-		{
-			notify(rw, path, 0);
-			g_free(path);
-		}
 		open_book(rw, file, -1); // 페이지는 캐시에서 준비
 		g_object_unref(file);
 	}
@@ -384,6 +382,8 @@ static void cb_open_book_dialog(GObject* source_object, GAsyncResult* res, gpoin
 // 이 함수는 비동기로 동작하므로, 이 함수를 호출한 뒤에 뭐 하면 안된다
 static void open_book_dialog(ReadWindow* rw)
 {
+	reset_key(rw);
+
 	GtkFileFilter* fall = doumi_file_filter_all();
 	GtkFileFilter* fzip = doumi_file_filter_zip();
 	GListStore* filters = g_list_store_new(GTK_TYPE_FILE_FILTER);
@@ -421,8 +421,6 @@ static void signal_destroy(GtkWidget* widget, ReadWindow* rw)
 
 	// 페이지 다이얼로그 해제
 
-	if (rw->notify_text)
-		g_free(rw->notify_text);
 	if (rw->notify_font)
 		pango_font_description_free(rw->notify_font);
 
@@ -537,9 +535,7 @@ static gboolean signal_key_released(GtkEventControllerKey* controller,
 	GdkModifierType state,
 	ReadWindow* rw)
 {
-	rw->key_val = 0;
-	rw->key_state = GDK_NO_MODIFIER_MASK;
-
+	reset_key(rw);
 	return false;
 }
 
@@ -552,6 +548,9 @@ static gboolean signal_key_pressed(GtkEventControllerKey* controller,
 {
 	// 보조키는 쉬프트/컨트롤/알트/슈퍼/하이퍼/메타만 남기고 나머지는 제거
 	state &= GDK_SHIFT_MASK | GDK_CONTROL_MASK | GDK_ALT_MASK | GDK_SUPER_MASK | GDK_HYPER_MASK | GDK_META_MASK;
+	// 대문자는 소문자로
+	value = gdk_keyval_to_lower(value);
+
 	if (rw->key_val == value && rw->key_state == state)
 		return false;
 
@@ -636,16 +635,14 @@ static void menu_view_quality_toggled(GtkCheckButton* button, ReadWindow* rw)
 // 단축키 - 아무것도 안함
 static void shortcut_none(ReadWindow* rw)
 {
-#if _DEBUG
-	static int s_i = 0;
-	g_info(_("no action: %d"), s_i++);
-#endif
+	// 아무것도 안할거다
 }
 
 // 단축키 - 테스트
 static void shortcut_test(ReadWindow* rw)
 {
-	notify(rw, _("TEST TEST TEST"), 5000);
+	static int s_index = 0;
+	notify(rw, 5000, _("TEST phase #%d"), ++s_index);
 }
 
 // 단축키 - 끝내기
@@ -683,6 +680,29 @@ static void shortcut_settings(ReadWindow* rw)
 static void shortcut_fullscreen(ReadWindow* rw)
 {
 	toggle_fullscreen(rw);
+}
+
+// 단축기 - 마지막 책 열기
+static void shortcut_open_last_book(ReadWindow* rw)
+{
+	const char* last = config_get_string_ptr(CONFIG_FILE_LAST_FILE, false);
+	if (last && last[0] != '\0')
+	{
+		if (rw->book != NULL && g_strcmp0(rw->book->full_name, last) == 0)
+			return;	// 이미 열려있는 책이면 그냥 리턴
+
+		GFile* file = g_file_new_for_path(last);
+		if (file != NULL && g_file_query_exists(file, NULL))
+		{
+			open_book(rw, file, -1); // 페이지는 캐시에서 준비
+			g_object_unref(file);
+			return;
+		}
+
+		if (file != NULL)
+			g_object_unref(file);
+	}
+	notify(rw, 0, _("No last book found"));
 }
 #pragma endregion
 
@@ -950,6 +970,7 @@ ReadWindow* read_window_new(GtkApplication* app)
 		{ "file_close", shortcut_file_close },
 		{ "settings", shortcut_settings },
 		{ "fullscreen", shortcut_fullscreen },
+		{ "open_last_book", shortcut_open_last_book },
 		{ NULL, NULL }
 	};
 

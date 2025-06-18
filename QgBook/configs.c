@@ -739,9 +739,29 @@ void movloc_free(MoveLocation* moves, int count)
 	g_free(moves);
 }
 
+// 문자열에서 modifier 파싱
+static GdkModifierType parse_modifier(const char* name)
+{
+	if (g_ascii_strcasecmp(name, "Shift") == 0)
+		return GDK_SHIFT_MASK;
+	if (g_ascii_strcasecmp(name, "Control") == 0 || g_ascii_strcasecmp(name, "Ctrl") == 0)
+		return GDK_CONTROL_MASK;
+	if (g_ascii_strcasecmp(name, "Alt") == 0)
+		return GDK_ALT_MASK;
+	if (g_ascii_strcasecmp(name, "Super") == 0 || g_ascii_strcasecmp(name, "Win") == 0)
+		return GDK_SUPER_MASK;
+	if (g_ascii_strcasecmp(name, "Meta") == 0)
+		return GDK_META_MASK;
+	if (g_ascii_strcasecmp(name, "Hyper") == 0)
+		return GDK_HYPER_MASK;
+	return 0;
+}
+
 // 단축키 만들기
 static gint64* convert_shortcut(const char* alias)
 {
+#if false
+	// GTK4의 ShortcutTrigger를 사용하여 단축키를 파싱합니다.
 	gint64 ret = 0;
 	GtkShortcutTrigger* trigger = gtk_shortcut_trigger_parse_string(alias);
 	if (GTK_IS_KEYVAL_TRIGGER(trigger))
@@ -757,6 +777,54 @@ static gint64* convert_shortcut(const char* alias)
 	gint64* p = g_new(gint64, 1);
 	*p = ret;
 	return p;
+#else
+	// 코파일럿이 만들어준 단축키 파싱 코드
+	if (!alias || !*alias)
+		return NULL;
+
+	GdkModifierType mods = 0;
+	const char* p = alias;
+	char keyname[64] = { 0 };
+	size_t keyname_len = 0;
+
+	// 파싱: <Modifier>들 먼저
+	while (*p)
+	{
+		if (*p == '<')
+		{
+			const char* end = strchr(p, '>');
+			if (!end) break;
+			const size_t len = end - (p + 1);
+			if (len > 0 && len < 32)
+			{
+				char modname[32];
+				memcpy(modname, p + 1, len);
+				modname[len] = 0;
+				mods |= parse_modifier(modname);
+			}
+			p = end + 1;
+		}
+		else
+		{
+			// 키 이름 시작
+			break;
+		}
+	}
+
+	// 남은 부분이 키 이름
+	while (*p && keyname_len < sizeof(keyname) - 1)
+		keyname[keyname_len++] = *p++;
+	keyname[keyname_len] = 0;
+
+	// 키값 변환
+	guint keyval = gdk_keyval_from_name(keyname);
+	if (keyval == 0)
+		return NULL;
+
+	gint64* result = g_new(gint64, 1);
+	*result = ((gint64)mods << 32) | keyval;
+	return result;
+#endif
 }
 
 // 단축키 얻어오기
@@ -768,6 +836,17 @@ void shortcut_register(void)
 		gint64* key = convert_shortcut(sc->alias);
 		if (key)
 			g_hash_table_insert(cfgs.shortcut, key, g_strdup(sc->action));
+#if defined(_DEBUG) && false
+		if (key == NULL)
+			g_log("SHORTCUT", G_LOG_LEVEL_ERROR, "%s -> %s", sc->action, sc->alias);
+		else
+		{
+			const guint key_val = (guint)(*key & 0xFFFFFFFF); // 하위 32비트가 키값
+			const guint key_state = (guint)(*key >> 32); // 상위 32비트가 상태
+			g_log("SHORTCUT", G_LOG_LEVEL_DEBUG, "%s -> %s (%X, %X)",
+				sc->action, sc->alias, key_state, key_val);
+		}
+#endif
 	}
 
 	// SQL에서 단축키를 가져와서 넣기
