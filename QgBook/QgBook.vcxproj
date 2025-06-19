@@ -176,6 +176,7 @@
     <ClInclude Include="defs.h" />
     <ClInclude Include="doumi.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="sqlite\sqlite3.h" />
     <ClInclude Include="sqlite\sqlite3ext.h" />
   </ItemGroup>
@@ -187,7 +188,6 @@
     <Text Include="data\lang\ko.txt" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="data\DuView.ico" />
     <Image Include="data\icon\directory.png" />
     <Image Include="data\icon\menus.png" />
     <Image Include="data\icon\move.png" />
@@ -201,6 +201,7 @@
     <Image Include="data\icon\view-mode-r2l.png" />
     <Image Include="data\pix\housebari_head_128.jpg" />
     <Image Include="data\pix\no_image.png" />
+    <Image Include="data\QgBook.ico" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="resg.xml">
@@ -213,6 +214,9 @@
       <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</VerifyInputsAndOutputsExist>
       <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</VerifyInputsAndOutputsExist>
     </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Resource.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

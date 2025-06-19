@@ -89,6 +89,9 @@
     <ClInclude Include="bound.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="data\style.css">
@@ -129,9 +132,6 @@
     <Image Include="data\pix\no_image.png">
       <Filter>자료\pix</Filter>
     </Image>
-    <Image Include="data\DuView.ico">
-      <Filter>자료</Filter>
-    </Image>
     <Image Include="data\icon\menus.png">
       <Filter>자료\icon</Filter>
     </Image>
@@ -144,10 +144,18 @@
     <Image Include="data\icon\qg-book-256.png">
       <Filter>자료\icon</Filter>
     </Image>
+    <Image Include="data\QgBook.ico">
+      <Filter>자료</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="resg.xml">
       <Filter>리소스 파일</Filter>
     </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Resource.rc">
+      <Filter>리소스 파일</Filter>
+    </ResourceCompile>
   </ItemGroup>
 </Project>
