@@ -37,7 +37,7 @@ void book_base_dispose(Book* book)
 }
 
 // 페이지 읽기
-GdkPaintable* book_read_page(Book* book, int page)
+GdkTexture* book_read_page(Book* book, int page)
 {
 	if (page < 0 || page >= (int)book->entries->len)
 		goto pos_return_no_image;
@@ -47,6 +47,8 @@ GdkPaintable* book_read_page(Book* book, int page)
 
 	GError* err = NULL;
 	GdkTexture* texture = gdk_texture_new_from_bytes(data, &err);
+	g_bytes_unref(data);
+
 	if (!texture)
 	{
 		if (err)
@@ -54,18 +56,17 @@ GdkPaintable* book_read_page(Book* book, int page)
 			g_log("BOOK", G_LOG_LEVEL_WARNING, _("Failed to create page %d: %s"), page, err->message);
 			g_clear_error(&err);
 		}
-		g_bytes_unref(data);
 		goto pos_return_no_image;
 	}
 
 	// 원래 여기서 캐시에 넣어야 됨
 
-	return GDK_PAINTABLE(texture);
+	return texture;
 
 pos_return_no_image:
 	GdkTexture* no_image = res_get_texture(RES_PIX_NO_IMAGE);
 	// ref 반환이 no_image랑 같은지 확인 필요
-	return GDK_PAINTABLE(g_object_ref(no_image));
+	return GDK_TEXTURE(g_object_ref(no_image));
 }
 
 // 다음 페이지로 이동

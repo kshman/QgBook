@@ -171,6 +171,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="book.h" />
+    <ClInclude Include="bound.h" />
     <ClInclude Include="configs.h" />
     <ClInclude Include="defs.h" />
     <ClInclude Include="doumi.h" />
@@ -188,8 +189,12 @@
   <ItemGroup>
     <Image Include="data\DuView.ico" />
     <Image Include="data\icon\directory.png" />
+    <Image Include="data\icon\menus.png" />
     <Image Include="data\icon\move.png" />
+    <Image Include="data\icon\painting.png" />
     <Image Include="data\icon\purutu.png" />
+    <Image Include="data\icon\qg-book-256.png" />
+    <Image Include="data\icon\qg-book-48.png" />
     <Image Include="data\icon\rename.png" />
     <Image Include="data\icon\view-mode-fit.png" />
     <Image Include="data\icon\view-mode-l2r.png" />

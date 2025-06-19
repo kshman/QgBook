@@ -74,6 +74,16 @@ bool doumi_is_image_file(const char* filename)
 		g_ascii_strcasecmp(ext, "tiff") == 0)
 		return true; // 비교 순서는 자주 쓰는 순서로
 	return false;
+
+	// 원래 아래 코드로 지원하는 이미지를 얻어와야 한다
+	//GSList *formats = gdk_pixbuf_get_formats();
+	//for (GSList *l = formats; l != NULL; l = l->next) {
+	//	GdkPixbufFormat *fmt = l->data;
+	//	const gchar *name = gdk_pixbuf_format_get_name(fmt);
+	//	const gchar *desc = gdk_pixbuf_format_get_description(fmt);
+	//	g_print("지원 포맷: %s (%s)\n", name, desc);
+	//}
+	//g_slist_free(formats);
 }
 
 // ZIP 압축인가 확장자로 검사
@@ -584,4 +594,29 @@ GFileType doumi_get_file_type_from_gfile(GFile* file)
 	GFileType type = g_file_info_get_file_type(info);
 	g_object_unref(info);
 	return type;
+}
+
+// 첫번째 모니터 얻기
+// 얻은 모니터는 g_object_unref로 해제해야 함
+GdkMonitor* doumi_get_primary_monitor(void)
+{
+	GdkDisplay* display = gdk_display_get_default();
+	if (!display) return NULL;
+	GListModel* monitors = gdk_display_get_monitors(display);
+	if (!monitors || g_list_model_get_n_items(monitors) == 0)
+		return NULL;
+	return g_list_model_get_item(monitors, 0);
+}
+
+// 첫번째 모니터의 크기 얻기
+bool doumi_get_primary_monitor_dimension(int* width, int* height)
+{
+	GdkMonitor* monitor = doumi_get_primary_monitor();
+	if (!monitor) return false;
+	GdkRectangle geometry;
+	gdk_monitor_get_geometry(monitor, &geometry);
+	if (width) *width = geometry.width;
+	if (height) *height = geometry.height;
+	g_object_unref(monitor);
+	return true;
 }

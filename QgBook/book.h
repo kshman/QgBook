@@ -48,7 +48,7 @@ struct Book
 extern void book_base_init(Book* book, const char* filename);
 extern void book_base_dispose(Book* book);
 
-extern GdkPaintable* book_read_page(Book* book, int page);
+extern GdkTexture* book_read_page(Book* book, int page);
 extern bool book_move_next(Book* book, ViewMode mode);
 extern bool book_move_prev(Book* book, ViewMode mode);
 extern bool book_move_page(Book* book, int page);

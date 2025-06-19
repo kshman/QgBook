@@ -8,6 +8,8 @@ typedef enum ConfigKeys
 	CONFIG_RUN_COUNT, // 실행 횟수
 	CONFIG_RUN_DURATION, // 실행 시간 (초 단위)
 	// 윈도우
+	CONFIG_WINDOW_X, // 윈도우 X 좌표
+	CONFIG_WINDOW_Y, // 윈도우 Y 좌표
 	CONFIG_WINDOW_WIDTH, // 윈도우 너비
 	CONFIG_WINDOW_HEIGHT, // 윈도우 높이
 	// 일반
@@ -24,6 +26,7 @@ typedef enum ConfigKeys
 	CONFIG_VIEW_ZOOM, // 보기 확대
 	CONFIG_VIEW_MODE, // 보기 모드
 	CONFIG_VIEW_QUALITY, // 보기 품질
+	CONFIG_VIEW_MARGIN, // 보기 여백
 	// 보안
 	CONFIG_SECURITY_USE_PASS, // 비밀번호 보호
 	CONFIG_SECURITY_PASS_CODE, // 비밀번호 값

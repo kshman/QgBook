@@ -86,6 +86,9 @@
     <ClInclude Include="doumi.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="bound.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="data\style.css">
@@ -128,6 +131,18 @@
     </Image>
     <Image Include="data\DuView.ico">
       <Filter>자료</Filter>
+    </Image>
+    <Image Include="data\icon\menus.png">
+      <Filter>자료\icon</Filter>
+    </Image>
+    <Image Include="data\icon\painting.png">
+      <Filter>자료\icon</Filter>
+    </Image>
+    <Image Include="data\icon\qg-book-48.png">
+      <Filter>자료\icon</Filter>
+    </Image>
+    <Image Include="data\icon\qg-book-256.png">
+      <Filter>자료\icon</Filter>
     </Image>
   </ItemGroup>
   <ItemGroup>

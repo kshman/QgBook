@@ -446,6 +446,7 @@ void config_load_cache(void)
 	sql_select_config(db, CONFIG_VIEW_ZOOM);
 	sql_select_config(db, CONFIG_VIEW_MODE);
 	sql_select_config(db, CONFIG_VIEW_QUALITY);
+	sql_select_config(db, CONFIG_VIEW_MARGIN);
 
 	sql_select_config(db, CONFIG_SECURITY_USE_PASS);
 	sql_select_config(db, CONFIG_SECURITY_PASS_CODE);

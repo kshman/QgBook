@@ -14,7 +14,9 @@ glib-compile-resources.exe --generate-source --sourcedir=$(ProjectDir) --target=
     <file compressed="true">data/icon/move.png</file>
     <file compressed="true">data/icon/painting.png</file>
     <file compressed="true">data/icon/purutu.png</file>
-    <file compressed="true">data/icon/rename.png</file>
+	<file compressed="true">data/icon/qg-book-48.png</file>
+	<file compressed="true">data/icon/qg-book-256.png</file>
+	<file compressed="true">data/icon/rename.png</file>
     <file compressed="true">data/icon/view-mode-fit.png</file>
     <file compressed="true">data/icon/view-mode-l2r.png</file>
     <file compressed="true">data/icon/view-mode-r2l.png</file>

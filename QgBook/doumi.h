@@ -55,6 +55,8 @@ extern GtkFileFilter* doumi_file_filter_all(void);
 extern GtkFileFilter* doumi_file_filter_image(void);
 extern GtkFileFilter* doumi_file_filter_zip(void);
 extern GFileType doumi_get_file_type_from_gfile(GFile* file);
+extern GdkMonitor* doumi_get_primary_monitor(void);
+extern bool doumi_get_primary_monitor_dimension(int* width, int* height);
 
 extern void doumi_mesg_box(GtkWindow* parent, const char* text, const char* detail);
 

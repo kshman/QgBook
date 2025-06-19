@@ -3,9 +3,10 @@
 // 수평 정렬 방식을 나타내는 열거형입니다.
 typedef enum HorizAlign
 {
-	HORIZ_ALIGN_LEFT,
 	HORIZ_ALIGN_CENTER,
+	HORIZ_ALIGN_LEFT,
 	HORIZ_ALIGN_RIGHT,
+	HORIZ_ALIGN_MAX_VALUE,
 } HorizAlign;
 
 // 책 읽는 방향을 나타내는 열거형입니다.
@@ -42,5 +43,6 @@ typedef enum BookControl
 	BOOK_CTRL_SCAN_PREV,
 	BOOK_CTRL_SCAN_NEXT,
 	BOOK_CTRL_SELECT,
+	BOOK_CTRL_MAX_VALUE,
 } BookControl;
 
