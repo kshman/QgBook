@@ -27,6 +27,9 @@ typedef struct BookFunc
 	bool (*delete)(Book*);
 	bool (*move)(Book*, const char* move_filename);
 	gchar* (*rename)(Book*, const char* new_filename);
+
+	// 정적 함수
+	bool (*ext_compare)(const char* filename);
 } BookFunc;
 
 // 책

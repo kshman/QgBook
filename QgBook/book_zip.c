@@ -11,15 +11,10 @@ typedef struct BookZip
 } BookZip;
 
 static void bz_dispose(Book* book);
-
 static GBytes *bz_read_data(Book* book, int page);
-
 static bool bz_can_delete(Book* book);
-
 static bool bz_delete(Book* book);
-
 static bool bz_move(Book* book, const char* move_filename);
-
 static gchar *bz_rename(Book* book, const char* new_filename);
 
 // ZIP책 함수 테이블
@@ -30,7 +25,8 @@ static BookFunc bz_func =
 	.can_delete = bz_can_delete,
 	.delete = bz_delete,
 	.move = bz_move,
-	.rename = bz_rename
+	.rename = bz_rename,
+	.ext_compare = doumi_is_archive_zip, // ZIP파일인지 확인하는 함수
 };
 
 // ZIP책 만들기
@@ -123,7 +119,7 @@ static GBytes *bz_read_data(Book* book, int page)
 static bool bz_can_delete(Book* book)
 {
 	// 원래 파일이 읽기 전용인가만 확인하자.
-	return doumi_is_file_readonly(book->full_name);
+	return !doumi_is_file_readonly(book->full_name);
 }
 
 static bool bz_delete(Book* book)
@@ -137,13 +133,13 @@ static bool bz_delete(Book* book)
 	}
 
 	GFile* file = g_file_new_for_path(book->full_name);
-	bool res = !g_file_trash(file, NULL, NULL) && !g_file_delete(file, NULL, NULL);
+	const bool res = g_file_trash(file, NULL, NULL);
 	g_object_unref(file);
 
 	if (!res)
 	{
-		// 허... 마지막으로 CRT함수를 써보자
-		if (remove(book->full_name) != 0)
+		// 바로 지워보자
+		if (!g_file_delete(file, NULL, NULL))
 			return false;
 	}
 
@@ -160,7 +156,7 @@ static bool bz_common_move(BookZip* bz, const char* src_path, const char* dst_pa
 
 	GFile* src = g_file_new_for_path(src_path);
 	GFile* dst = g_file_new_for_path(dst_path);
-	bool res = g_file_move(src, dst, G_FILE_COPY_NONE, NULL, NULL, NULL, NULL);
+	const bool res = g_file_move(src, dst, G_FILE_COPY_NONE, NULL, NULL, NULL, NULL);
 	g_object_unref(src);
 	g_object_unref(dst);
 

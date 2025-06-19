@@ -9,12 +9,18 @@ extern ShortcutDefinition shortcut_defs[];
 // 설정 자료
 static struct Configs
 {
+	time_t launched;
+
+	char* app_path;
+	char* cfg_path;
+
 	GHashTable* lang;
 	GHashTable* cache;
 	GHashTable* shortcut;
-	char* app_path;
-	char* cfg_path;
-	time_t launched;
+
+	GPtrArray* nears;
+	NearExtentionCompare near_compare;
+	char* near_dir;
 } cfgs =
 {
 	.lang = NULL,
@@ -390,6 +396,9 @@ bool config_init(void)
 	// 단축키, 읽는 거는 register에서 한다
 	cfgs.shortcut = g_hash_table_new_full(g_int64_hash, g_int64_equal, g_free, g_free);
 
+	// 근처 파일
+	cfgs.nears = g_ptr_array_new_with_free_func(g_free);
+
 	// ㅇㅋ
 	sqlite3_close(db);
 	return true;
@@ -412,16 +421,22 @@ void config_dispose(void)
 		sqlite3_close(db);
 	}
 
-	if (cfgs.cfg_path)
-		g_free(cfgs.cfg_path);
-	if (cfgs.app_path)
-		g_free(cfgs.app_path);
+	if (cfgs.near_dir)
+		g_free(cfgs.near_dir);
+	if (cfgs.nears)
+		g_ptr_array_free(cfgs.nears, true);
+
 	if (cfgs.cache)
 		g_hash_table_destroy(cfgs.cache);
 	if (cfgs.shortcut)
 		g_hash_table_destroy(cfgs.shortcut);
 	if (cfgs.lang)
 		g_hash_table_destroy(cfgs.lang);
+
+	if (cfgs.cfg_path)
+		g_free(cfgs.cfg_path);
+	if (cfgs.app_path)
+		g_free(cfgs.app_path);
 }
 
 // 설정에서 쓸 값을 캐시합니다.
@@ -740,6 +755,186 @@ void movloc_free(MoveLocation* moves, int count)
 	g_free(moves);
 }
 
+
+// 자연스러운 문자열 비교
+static gint compare_natural_filename(const void* pa, const void* pb)
+{
+	const char* a = *(const char**)pa;  // NOLINT(clang-diagnostic-cast-qual)
+	const char* b = *(const char**)pb;  // NOLINT(clang-diagnostic-cast-qual)
+
+#ifndef _WIN32
+	// 윈도우가 아닌 OS의 비교. UTF-8, 숫자 인식
+	const char* pa_ptr = a, * pb_ptr = b;
+	while (*pa_ptr && *pb_ptr)
+	{
+		// 숫자 구간 비교
+		if (g_ascii_isdigit(*pa_ptr) && g_ascii_isdigit(*pb_ptr))
+		{
+			// 숫자 파싱
+			char* end_a;
+			char* end_b;
+			const gint64 va = g_ascii_strtoll(pa_ptr, &end_a, 10);
+			const gint64 vb = g_ascii_strtoll(pb_ptr, &end_b, 10);
+			if (va != vb)
+				return (va > vb) - (va < vb);
+			pa_ptr = end_a;
+			pb_ptr = end_b;
+		}
+		else
+		{
+			// 문자 구간 비교 (UTF-8 단위)
+			const gunichar ca = g_utf8_get_char(pa_ptr);
+			const gunichar cb = g_utf8_get_char(pb_ptr);
+			if (ca != cb)
+				return (ca > cb) - (ca < cb);
+			pa_ptr = g_utf8_next_char(pa_ptr);
+			pb_ptr = g_utf8_next_char(pb_ptr);
+		}
+	}
+	// 남은 길이 비교
+	return g_utf8_collate(a, b);
+#else
+	// 윈도우 전용, 탐색기와 같은 정렬 방식
+	const char* pa_ptr = a, * pb_ptr = b;
+	while (*pa_ptr && *pb_ptr)
+	{
+		if (g_ascii_isdigit(*pa_ptr) && g_ascii_isdigit(*pb_ptr))
+		{
+			char* end_a;
+			char* end_b;
+			const gint64 va = g_ascii_strtoll(pa_ptr, &end_a, 10);
+			const gint64 vb = g_ascii_strtoll(pb_ptr, &end_b, 10);
+			if (va != vb)
+				return (va > vb) - (va < vb);
+			pa_ptr = end_a;
+			pb_ptr = end_b;
+		}
+		else
+		{
+			break; // 숫자 구간이 아니면 전체 문자열 비교로 넘어감
+		}
+	}
+
+	// UTF-8 → UTF-16 변환
+	const int wlen_a = MultiByteToWideChar(CP_UTF8, 0, a, -1, NULL, 0);
+	const int wlen_b = MultiByteToWideChar(CP_UTF8, 0, b, -1, NULL, 0);
+	WCHAR* wa = g_malloc(sizeof(WCHAR) * wlen_a);
+	WCHAR* wb = g_malloc(sizeof(WCHAR) * wlen_b);
+	MultiByteToWideChar(CP_UTF8, 0, a, -1, wa, wlen_a);
+	MultiByteToWideChar(CP_UTF8, 0, b, -1, wb, wlen_b);
+
+	// 윈도우 탐색기와 유사하게: 숫자 인식, 대소문자 구분 없음, 로케일 기본
+	const int result = CompareStringEx(
+		LOCALE_NAME_USER_DEFAULT,
+		NORM_IGNORECASE | SORT_DIGITSASNUMBERS,
+		wa, -1,
+		wb, -1,
+		NULL, NULL, 0);
+
+	g_free(wa);
+	g_free(wb);
+
+	// CompareStringEx는 1(less), 2(equal), 3(greater) 반환
+	if (result == CSTR_LESS_THAN) return -1;
+	if (result == CSTR_GREATER_THAN) return 1;
+	return 0;
+#endif
+}
+
+// 근처 파일을 추가합니다.
+bool nears_build(const char* dir, NearExtentionCompare compare)
+{
+	if (dir == NULL || compare == NULL)
+		return false; // 디렉토리나 비교 함수가 NULL이면 실패
+
+	if (g_strcmp0(cfgs.near_dir, dir) == 0 && cfgs.near_compare == compare)
+		return true; // 같은 디렉토리 & 비교 함수가 같으면 아무것도 안함
+
+	GDir* gd = g_dir_open(dir, 0, NULL);
+	if (gd == NULL)
+		return false; // 디렉토리 열기 실패
+
+	if (cfgs.near_dir)
+		g_free(cfgs.near_dir);
+	cfgs.near_dir = g_strdup(dir);
+	cfgs.near_compare = compare;
+	g_ptr_array_set_size(cfgs.nears, 0);
+
+	const char* name;
+	while ((name = g_dir_read_name(gd)) != NULL)
+	{
+		if (name[0] == '.' || name[0] == '\0') // 숨김 파일이나 빈 이름은 무시
+			continue;
+		char* fullpath = g_build_filename(dir, name, NULL);
+		if (g_file_test(fullpath, G_FILE_TEST_IS_REGULAR) && compare(name))
+			g_ptr_array_add(cfgs.nears, fullpath);
+		else
+			g_free(fullpath);
+	}
+
+	g_dir_close(gd);
+
+	// 자연스러운 정렬 적용
+	g_ptr_array_sort(cfgs.nears, compare_natural_filename);
+
+	return true;
+}
+
+// 지정 파일의 앞쪽 근처 파일을 얻습니다.
+const char* nears_get_prev(const char* fullpath, bool remove)
+{
+	g_return_val_if_fail(fullpath != NULL, NULL);
+	for (guint i = 0; i < cfgs.nears->len; ++i)
+	{
+		const char* near_file = g_ptr_array_index(cfgs.nears, i);
+		if (g_strcmp0(near_file, fullpath) != 0)
+			continue; // 자기 자신이 아니면 계속
+		if (i == 0)
+			return NULL; // 첫번째면 이전이 없음
+		const char* prev_file = g_ptr_array_index(cfgs.nears, i - 1);
+		if (remove)
+			g_ptr_array_remove_index(cfgs.nears, i); // 자기 자신을 제거
+		return prev_file; // 이전 파일 반환
+	}
+	return NULL;
+}
+
+// 지정 파일의 뒤쪽 근처 파일을 얻습니다.
+const char* nears_get_next(const char* fullpath, bool remove)
+{
+	g_return_val_if_fail(fullpath != NULL, NULL);
+	for (guint i = 0; i < cfgs.nears->len; ++i)
+	{
+		const char* near_file = g_ptr_array_index(cfgs.nears, i);
+		if (g_strcmp0(near_file, fullpath) != 0)
+			continue; // 자기 자신이 아니면 계속
+		if (i + 1 >= cfgs.nears->len)
+			return NULL; // 마지막이면 다음이 없음
+		const char* next_file = g_ptr_array_index(cfgs.nears, i + 1);
+		if (remove)
+			g_ptr_array_remove_index(cfgs.nears, i); // 자기 자신을 제거
+		return next_file; // 다음 파일 반환
+	}
+	return NULL;
+}
+
+// 지정 파일을 빼고 임의의 파일을 얻습니다.
+const char* nears_get_random(const char* fullpath)
+{
+	g_return_val_if_fail(fullpath != NULL, NULL);
+	if (cfgs.nears->len == 0)
+		return NULL; // 근처 파일이 없으면 NULL
+	guint index = g_random_int_range(0, (gint)cfgs.nears->len);
+	while (true)
+	{
+		const char* near_file = g_ptr_array_index(cfgs.nears, index);
+		if (g_strcmp0(near_file, fullpath) != 0) // 자기 자신이 아니면 반환
+			return near_file;
+		index = (index + 1) % cfgs.nears->len; // 다음 인덱스로 이동
+	}
+}
+
+
 // 문자열에서 modifier 파싱
 static GdkModifierType parse_modifier(const char* name)
 {
@@ -761,25 +956,6 @@ static GdkModifierType parse_modifier(const char* name)
 // 단축키 만들기
 static gint64* convert_shortcut(const char* alias)
 {
-#if false
-	// GTK4의 ShortcutTrigger를 사용하여 단축키를 파싱합니다.
-	gint64 ret = 0;
-	GtkShortcutTrigger* trigger = gtk_shortcut_trigger_parse_string(alias);
-	if (GTK_IS_KEYVAL_TRIGGER(trigger))
-	{
-		GtkKeyvalTrigger* keyval = GTK_KEYVAL_TRIGGER(trigger);
-		const guint key = gtk_keyval_trigger_get_keyval(keyval);
-		const GdkModifierType state = gtk_keyval_trigger_get_modifiers(keyval);
-		ret = ((gint64)state << 32) | key; // 상위 32비트에 상태, 하위 32비트에 키값
-	}
-	g_object_unref(trigger);
-	if (ret == 0)
-		return NULL;
-	gint64* p = g_new(gint64, 1);
-	*p = ret;
-	return p;
-#else
-	// 코파일럿이 만들어준 단축키 파싱 코드
 	if (!alias || !*alias)
 		return NULL;
 
@@ -818,14 +994,13 @@ static gint64* convert_shortcut(const char* alias)
 	keyname[keyname_len] = 0;
 
 	// 키값 변환
-	guint keyval = gdk_keyval_from_name(keyname);
+	const guint keyval = gdk_keyval_from_name(keyname);
 	if (keyval == 0)
 		return NULL;
 
 	gint64* result = g_new(gint64, 1);
 	*result = ((gint64)mods << 32) | keyval;
 	return result;
-#endif
 }
 
 // 단축키 얻어오기

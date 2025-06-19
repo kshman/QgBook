@@ -70,7 +70,7 @@ bool doumi_is_image_file(const char* filename)
 		g_ascii_strcasecmp(ext, "png") == 0 ||
 		g_ascii_strcasecmp(ext, "jpeg") == 0 ||
 		g_ascii_strcasecmp(ext, "gif") == 0 ||
-		g_ascii_strcasecmp(ext, "bmp") == 0 ||
+		g_ascii_strcasecmp(ext, "bmp") == 0 ||	// 윈도우에서는 BMP를 지원하지 않음
 		g_ascii_strcasecmp(ext, "tiff") == 0)
 		return true; // 비교 순서는 자주 쓰는 순서로
 	return false;
@@ -504,35 +504,6 @@ GdkTexture* doumi_texture_from_surface(cairo_surface_t* surface)
 	return texture;
 }
 
-// 메시지 박스 선택 콜백
-static void mesg_box_on_choose(GObject* source_object, GAsyncResult* res, gpointer user_data)
-{
-	GtkAlertDialog* dialog = GTK_ALERT_DIALOG(source_object);
-	GMainLoop* loop = user_data;
-	gtk_alert_dialog_choose_finish(dialog, res, NULL);
-	g_main_loop_quit(loop);
-}
-
-// 메시지 박스
-void doumi_mesg_box(GtkWindow* parent, const char* text, const char* detail)
-{
-	GtkAlertDialog* dialog = gtk_alert_dialog_new("");
-	gtk_alert_dialog_set_modal(dialog, true);
-	gtk_alert_dialog_set_message(dialog, text);
-	gtk_alert_dialog_set_detail(dialog, detail);
-
-	static const char* buttons[] = { "Ok", NULL };
-	gtk_alert_dialog_set_buttons(dialog, buttons);
-	gtk_alert_dialog_set_default_button(dialog, 0);
-
-	GMainLoop* loop = g_main_loop_new(NULL, FALSE);
-	gtk_alert_dialog_choose(dialog, parent, NULL, mesg_box_on_choose, loop);
-
-	g_main_loop_run(loop);
-	g_main_loop_unref(loop);
-	g_object_unref(dialog);
-}
-
 // 파일 필터 - 모든 파일
 GtkFileFilter* doumi_file_filter_all(void)
 {
@@ -619,4 +590,54 @@ bool doumi_get_primary_monitor_dimension(int* width, int* height)
 	if (height) *height = geometry.height;
 	g_object_unref(monitor);
 	return true;
+}
+
+// 메시지 박스 선택 콜백 구조체
+struct mesg_box_sync
+{
+	GMainLoop* loop;
+	int result;
+};
+
+// 메시지 박스 선택 콜백
+static void mesg_box_on_choose(GObject* source_object, GAsyncResult* res, gpointer user_data)
+{
+	GtkAlertDialog* dialog = GTK_ALERT_DIALOG(source_object);
+	int response = gtk_alert_dialog_choose_finish(dialog, res, NULL);
+	struct mesg_box_sync* sync = user_data;
+	sync->result = response;
+	g_main_loop_quit(sync->loop);
+}
+
+// 메시지 박스
+bool doumi_mesg_box(GtkWindow* parent, const char* text, const char* detail, bool false_ok_true_yn)
+{
+	GtkAlertDialog* dialog = gtk_alert_dialog_new("");
+	gtk_alert_dialog_set_modal(dialog, true);
+	gtk_alert_dialog_set_message(dialog, text);
+	gtk_alert_dialog_set_detail(dialog, detail);
+
+	if (false_ok_true_yn)
+	{
+		const char* yesno_buttons[] = { _("Yes"), _("No"), NULL };
+		gtk_alert_dialog_set_buttons(dialog, yesno_buttons);
+	}
+	else
+	{
+		const char* ok_buttons[] = { _("OK"), NULL };
+		gtk_alert_dialog_set_buttons(dialog, ok_buttons);
+	}
+
+	gtk_alert_dialog_set_default_button(dialog, 0);
+
+	// 비동기 콜백 대신 동기적으로 결과를 받기 위한 구조
+	struct mesg_box_sync sync = { g_main_loop_new(NULL, FALSE), -1 };
+
+	// 콜백에서 sync.result에 결과 저장
+	gtk_alert_dialog_choose(dialog, parent, NULL, mesg_box_on_choose, &sync);
+	g_main_loop_run(sync.loop);
+	g_main_loop_unref(sync.loop);
+	g_object_unref(dialog);
+
+	return sync.result == 0; // OK/Yes: 0, No: 1
 }

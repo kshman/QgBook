@@ -506,12 +506,45 @@ static void page_control(ReadWindow* self, BookControl c)
 			break;
 
 		case BOOK_CTRL_SCAN_PREV:
-			notify(self, 0, _("Scan previous book"));
+		{
+			nears_build(self->book->dir_name, self->book->func.ext_compare);
+			const char* prev = nears_get_prev(self->book->full_name, false);
+			if (prev == NULL)
+				notify(self, 0, _("No previous book found"));
+			else
+			{
+				GFile* file = g_file_new_for_path(prev);
+				open_book(self, file);
+				g_object_unref(file);
+			}
 			break;
+		}
 
 		case BOOK_CTRL_SCAN_NEXT:
-			notify(self, 0, _("Scan next book"));
+		{
+			nears_build(self->book->dir_name, self->book->func.ext_compare);
+			const char* next = nears_get_next(self->book->full_name, false);
+			if (next == NULL)
+				notify(self, 0, _("No next book found"));
+			else
+			{
+				GFile* file = g_file_new_for_path(next);
+				open_book(self, file);
+				g_object_unref(file);
+			}
 			break;
+		}
+
+		case BOOK_CTRL_SCAN_RANDOM:
+		{
+			nears_build(self->book->dir_name, self->book->func.ext_compare);
+			const char* random = nears_get_random(self->book->full_name);
+			g_assert(random != NULL);
+			GFile* file = g_file_new_for_path(random);
+			open_book(self, file);
+			g_object_unref(file);
+			break;
+		}
 
 		case BOOK_CTRL_SELECT:
 			notify(self, 0, _("Page selection"));
@@ -771,6 +804,8 @@ static void shortcut_test(ReadWindow* self)
 {
 	static int s_index = 0;
 	notify(self, 5000, _("TEST phase #%d"), ++s_index);
+
+	reset_key(self);
 }
 
 // 단축키 - 끝내기
@@ -880,10 +915,31 @@ static void shortcut_delete_book(ReadWindow* self)
 {
 	if (self->book == NULL)
 		return;
+	if (!book_can_delete(self->book))
+	{
+		notify(self, 0, _("This book cannot be deleted"));
+		return;
+	}
 
-	// TODO: 책 지우기... 해야지
+	if (config_get_bool(CONFIG_GENERAL_CONFIRM_DELETE, true))
+	{
+		bool ret = doumi_mesg_box(GTK_WINDOW(self->window),
+			_("Delete current book?"), self->book->base_name, true);
+		if (!ret)
+			return; // 취소
+	}
+
+	if (!book_delete(self->book))
+	{
+		notify(self, 0, _("Failed to delete book"));
+		return;
+	}
+
+	self->book->cur_page = 0; // 책이 지워졌으므로 페이지는 0으로 초기화
+	close_book(self);
+
 	//const char* full_name = self->book->full_name;
-	notify(self, 0, _("Failed to delete book"));
+	// TODO: 다음책으로 넘어가야 되는데...
 }
 
 // 단축키 - 책 이름 바꾸기
@@ -974,7 +1030,9 @@ static void shortcut_scan_book_next(ReadWindow* self)
 
 // 단축키 - 임의의 책으로
 static void shortcut_scan_book_random(ReadWindow* self)
-{}
+{
+	page_control(self, BOOK_CTRL_SCAN_RANDOM);
+}
 
 // 단축키 - 읽기 방향 왼쪽/오른쪽 전환
 static void shortcut_view_mode_left_right(ReadWindow* self)
@@ -999,10 +1057,27 @@ static void paint_page_fit(ReadWindow* self, GtkSnapshot* snapshot, GdkTexture* 
 	const float scale_x = width / tw;
 	const float scale_y = height / th;
 	const float scale = fminf(scale_x, scale_y);
-	const float x = (width - tw * scale) / 2.0f;
-	const float y = (height - th * scale) / 2.0f;
+	const float draw_w = tw * scale;
+	const float draw_h = th * scale;
 
-	gtk_snapshot_append_texture(snapshot, texture, &GRAPHENE_RECT_INIT(x, y, tw * scale, th * scale));
+	float x;
+	switch (self->view_align)  // NOLINT(clang-diagnostic-switch-enum)
+	{
+		case HORIZ_ALIGN_CENTER:
+			x = (width - draw_w) / 2.0f;
+			break;
+		case HORIZ_ALIGN_LEFT:
+			x = (float)self->view_margin;
+			break;
+		case HORIZ_ALIGN_RIGHT:
+			x = width - draw_w - (float)self->view_margin;
+			break;
+		default:
+			g_assert_not_reached();
+	}
+	const float y = (height - draw_h) / 2.0f;
+
+	gtk_snapshot_append_texture(snapshot, texture, &GRAPHENE_RECT_INIT(x, y, draw_w, draw_h));
 }
 
 // 텍스쳐 두장을 나란히 화면 중앙에 붙여서 그리기 + 마진 지원
@@ -1052,7 +1127,8 @@ static void paint_page_dual(ReadWindow* self, GtkSnapshot* snapshot, GdkTexture*
 // 책 그리기
 static void paint_book(ReadWindow* self, GtkSnapshot* snapshot, float width, float height)
 {
-	g_return_if_fail(self->book != NULL);
+	if (self->book == NULL)
+		return;
 
 	// book_read_page에서 이미지가 없으면 no_image를 반환하므로 그냥 그리면 된다구요
 

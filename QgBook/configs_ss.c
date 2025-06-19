@@ -35,7 +35,7 @@ ShortcutDefinition shortcut_defs[] =
 	{ "page_select", "Enter" },
 	{ "scan_book_prev", "bracketleft" },
 	{ "scan_book_next", "bracketright" },
-	{ "scan_book_random", "slash" },
+	{ "scan_book_random", "backslash" },
 	{ "view_mode_left_right", "Tab" },
 	// 아래 널이 없으면 프로그램은 죽소
 	{ NULL, NULL }

@@ -72,6 +72,9 @@ typedef struct MoveLocation
 	char* folder;			// 디렉토리
 } MoveLocation;
 
+// 근처 파일 종류 확인용 콜백
+typedef bool (*NearExtentionCompare)(const char* filename);
+
 
 // 설정 관련 함수들
 extern bool config_init(void);
@@ -100,6 +103,12 @@ extern MoveLocation* movloc_get_all(int* ret_count);
 extern bool movloc_set(const char* folder, const char* alias);
 extern bool movloc_delete(const char* folder);
 extern void movloc_free(MoveLocation* moves, int count);
+
+// 근처 파일
+extern bool nears_build(const char* dir, NearExtentionCompare compare);
+extern const char* nears_get_prev(const char* fullpath, bool remove);
+extern const char* nears_get_next(const char* fullpath, bool remove);
+extern const char* nears_get_random(const char* fullpath);
 
 // 단축키
 extern void shortcut_register(void);
