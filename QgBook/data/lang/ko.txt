@@ -50,3 +50,10 @@ Yes=네
 ZIP archives=ZIP 압축 파일
 Zoom=늘려보기
 Rename book=책 이름 바꾸기
+Original filename=원래 파일 이름
+Rename to=바꿀 파일 이름
+Title=제목
+Author=저자
+No.=순번
+Extra Information=추가 정보
+

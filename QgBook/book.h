@@ -65,3 +65,14 @@ static inline bool book_move(Book* book, const char* move_filename) { return boo
 static inline gchar* book_rename(Book* book, const char* new_filename) { return book->func.rename(book, new_filename); }
 
 extern Book *book_zip_new(const char* zip_path);
+
+
+// 이름 바꾸기 구조체
+typedef struct RenameData
+{
+	bool result;			// 이름 바꾸기 성공 여부
+	char filename[2048];	// 새 파일 이름 (최대 1024자)
+} RenameData;
+
+// 이름 바꾸기 콜백
+typedef void (*RenameCallback)(gpointer sender, RenameData* data);
