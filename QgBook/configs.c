@@ -916,6 +916,22 @@ const char* nears_get_next(const char* fullpath)
 	return NULL;
 }
 
+// 지정 파일을 빼고 임의의 파일을 얻습니다.
+const char* nears_get_random(const char* fullpath)
+{
+	g_return_val_if_fail(fullpath != NULL, NULL);
+	if (cfgs.nears->len <= 1)	// 자기 자신만 있거나 근처 파일이 없으면
+		return NULL;
+	guint index = g_random_int_range(0, (gint)cfgs.nears->len);
+	while (true)
+	{
+		const char* near_file = g_ptr_array_index(cfgs.nears, index);
+		if (g_strcmp0(near_file, fullpath) != 0) // 자기 자신이 아니면 반환
+			return near_file;
+		index = (index + 1) % cfgs.nears->len; // 다음 인덱스로 이동
+	}
+}
+
 // 지정 파일을 삭제하고 근처 파일을 얻습니다
 const char* nears_get_for_remove(const char* fullpath)
 {
@@ -943,20 +959,31 @@ const char* nears_get_for_remove(const char* fullpath)
 	return NULL; 
 }
 
-// 지정 파일을 빼고 임의의 파일을 얻습니다.
-const char* nears_get_random(const char* fullpath)
+// 지정 파일을 삭제하고 새로운 항목을 추가하면서, 근처 파일을 얻습니다.
+const char* nears_get_for_rename(const char* fullpath, const char* new_filename)
 {
-	g_return_val_if_fail(fullpath != NULL, NULL);
-	if (cfgs.nears->len <= 1)	// 자기 자신만 있거나 근처 파일이 없으면
-		return NULL;
-	guint index = g_random_int_range(0, (gint)cfgs.nears->len);
-	while (true)
+	g_return_val_if_fail(fullpath != NULL && new_filename != NULL, NULL);
+	// 먼저 새 파일 이름을 추가하고
+	char* dup_filename = g_strdup(new_filename);
+	g_ptr_array_add(cfgs.nears, dup_filename);
+	// 이제 항목이 2개일 테니 루프로 확인
+	for (guint i = 0; i < cfgs.nears->len; ++i)
 	{
-		const char* near_file = g_ptr_array_index(cfgs.nears, index);
-		if (g_strcmp0(near_file, fullpath) != 0) // 자기 자신이 아니면 반환
-			return near_file;
-		index = (index + 1) % cfgs.nears->len; // 다음 인덱스로 이동
+		const char* near_file = g_ptr_array_index(cfgs.nears, i);
+		if (g_strcmp0(near_file, fullpath) != 0)
+			continue; // 자기 자신이 아니면 계속
+		const char* ret;
+		if (i == 0)
+			ret = g_ptr_array_index(cfgs.nears, 1); // 첫번째면 두번째를 넘김
+		else if (i + 1 < cfgs.nears->len)
+			ret = g_ptr_array_index(cfgs.nears, i + 1); // 다음 파일을 넘김
+		else
+			ret = g_ptr_array_index(cfgs.nears, i - 1); // 마지막이면 이전 파일을 넘김
+		g_ptr_array_remove_index(cfgs.nears, i); // 자기 자신을 제거
+		return ret;
 	}
+	// 여기까지.. 온다고? 그냥 새 파일 이름을 반환
+	return dup_filename;
 }
 
 

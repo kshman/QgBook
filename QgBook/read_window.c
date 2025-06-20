@@ -9,6 +9,9 @@
 typedef struct ReadWindow ReadWindow;
 typedef void (*ShortcutFunc)(ReadWindow*);
 
+// 외부 함수
+extern void renex_show_async(GtkWindow* parent, const char* filename, RenameCallback callback, gpointer user_data);
+
 #pragma region 스냅샷용 그리기 위젯
 // 그리기 위젯 정의
 typedef struct
@@ -983,7 +986,7 @@ static void shortcut_delete_book(ReadWindow* self)
 
 	// 책이 지워졌으므로 페이지는 0으로 초기화.
 	// 어짜피 close_book에서 저장하므로 페이지만 0으로 하면 된다
-	self->book->cur_page = 0; 
+	self->book->cur_page = 0;
 
 	// 다음 책으로 넘어가보자
 	const char* next = nears_get_for_remove(self->book->full_name);
@@ -1001,6 +1004,37 @@ static void shortcut_delete_book(ReadWindow* self)
 	}
 }
 
+// 책 이름 바꾸기 콜백
+static void cb_rename_book_done(gpointer sender, RenameData* data)
+{
+	ReadWindow* self = sender;
+
+	if (data == NULL || !data->result || *data->filename == '\0')
+		return;
+
+	if (g_strcmp0(data->filename, self->book->base_name) == 0)
+		return;
+
+	// 이름 바꾸기 전에 근처 파일을 만들어 놔야 한다
+	nears_build(self->book->dir_name, self->book->func.ext_compare);
+
+	char* new_filename = book_rename(self->book, data->filename);
+	if (new_filename == NULL)
+	{
+		notify(self, 0, _("Failed to rename book"));
+		return;
+	}
+
+	self->book->cur_page = 0; // 페이지는 초기화
+
+	const char* next = nears_get_for_rename(self->book->full_name, new_filename);
+	g_free(new_filename);
+
+	GFile* file = g_file_new_for_path(next);
+	open_book(self, file);
+	g_object_unref(file);
+}
+
 // 단축키 - 책 이름 바꾸기
 // 현재 단축키 밖에 없다.
 static void shortcut_rename_book(ReadWindow* self)
@@ -1008,7 +1042,9 @@ static void shortcut_rename_book(ReadWindow* self)
 	if (self->book == NULL)
 		return;
 
-	notify(self, 0, _("Failed to rename book"));
+	reset_key(self);	// 다이얼로그가 키를 먹어버리므로 키 입력 초기화
+
+	renex_show_async(GTK_WINDOW(self->window), self->book->base_name, cb_rename_book_done, self);
 }
 
 // 단축키 - 책 옮기기

@@ -71,6 +71,7 @@ extern Book *book_zip_new(const char* zip_path);
 typedef struct RenameData
 {
 	bool result;			// 이름 바꾸기 성공 여부
+	bool reopen;			// 다시 열기 플래그
 	char filename[2048];	// 새 파일 이름 (최대 1024자)
 } RenameData;
 

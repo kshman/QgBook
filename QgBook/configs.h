@@ -110,6 +110,7 @@ extern const char* nears_get_prev(const char* fullpath);
 extern const char* nears_get_next(const char* fullpath);
 extern const char* nears_get_random(const char* fullpath);
 extern const char* nears_get_for_remove(const char* fullpath);
+extern const char* nears_get_for_rename(const char* fullpath, const char* new_filename);
 
 
 // 단축키

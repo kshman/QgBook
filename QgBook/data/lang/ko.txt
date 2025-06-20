@@ -56,4 +56,5 @@ Title=제목
 Author=저자
 No.=순번
 Extra Information=추가 정보
-
+Cancel=취소
+Reopen=다시 열기
