@@ -446,6 +446,10 @@ void config_load_cache(void)
 	g_return_if_fail(db != NULL);
 
 	// 캐시
+#ifdef _WIN32
+	sql_select_config(db, CONFIG_WINDOW_X);
+	sql_select_config(db, CONFIG_WINDOW_Y);
+#endif
 	sql_select_config(db, CONFIG_WINDOW_WIDTH);
 	sql_select_config(db, CONFIG_WINDOW_HEIGHT);
 
@@ -881,7 +885,7 @@ bool nears_build(const char* dir, NearExtentionCompare compare)
 }
 
 // 지정 파일의 앞쪽 근처 파일을 얻습니다.
-const char* nears_get_prev(const char* fullpath, bool remove)
+const char* nears_get_prev(const char* fullpath)
 {
 	g_return_val_if_fail(fullpath != NULL, NULL);
 	for (guint i = 0; i < cfgs.nears->len; ++i)
@@ -891,16 +895,13 @@ const char* nears_get_prev(const char* fullpath, bool remove)
 			continue; // 자기 자신이 아니면 계속
 		if (i == 0)
 			return NULL; // 첫번째면 이전이 없음
-		const char* prev_file = g_ptr_array_index(cfgs.nears, i - 1);
-		if (remove)
-			g_ptr_array_remove_index(cfgs.nears, i); // 자기 자신을 제거
-		return prev_file; // 이전 파일 반환
+		return g_ptr_array_index(cfgs.nears, i - 1);
 	}
 	return NULL;
 }
 
 // 지정 파일의 뒤쪽 근처 파일을 얻습니다.
-const char* nears_get_next(const char* fullpath, bool remove)
+const char* nears_get_next(const char* fullpath)
 {
 	g_return_val_if_fail(fullpath != NULL, NULL);
 	for (guint i = 0; i < cfgs.nears->len; ++i)
@@ -910,20 +911,44 @@ const char* nears_get_next(const char* fullpath, bool remove)
 			continue; // 자기 자신이 아니면 계속
 		if (i + 1 >= cfgs.nears->len)
 			return NULL; // 마지막이면 다음이 없음
-		const char* next_file = g_ptr_array_index(cfgs.nears, i + 1);
-		if (remove)
-			g_ptr_array_remove_index(cfgs.nears, i); // 자기 자신을 제거
-		return next_file; // 다음 파일 반환
+		return g_ptr_array_index(cfgs.nears, i + 1);
 	}
 	return NULL;
+}
+
+// 지정 파일을 삭제하고 근처 파일을 얻습니다
+const char* nears_get_for_remove(const char* fullpath)
+{
+	g_return_val_if_fail(fullpath != NULL, NULL);
+	if (cfgs.nears->len == 1)
+	{
+		g_ptr_array_set_size(cfgs.nears, 0); // 자기 자신만 있으면 비움
+		return NULL;
+	}
+	for (guint i = 0; i < cfgs.nears->len; ++i)
+	{
+		const char* near_file = g_ptr_array_index(cfgs.nears, i);
+		if (g_strcmp0(near_file, fullpath) != 0)
+			continue; // 자기 자신이 아니면 계속
+		const char* ret;
+		if (i == 0)
+			ret = g_ptr_array_index(cfgs.nears, 1); // 첫번째면 두번째를 넘김
+		else if (i + 1 < cfgs.nears->len)
+			ret = g_ptr_array_index(cfgs.nears, i + 1); // 다음 파일을 넘김
+		else
+			ret = g_ptr_array_index(cfgs.nears, i - 1); // 마지막이면 이전 파일을 넘김
+		g_ptr_array_remove_index(cfgs.nears, i); // 자기 자신을 제거
+		return ret;
+	}
+	return NULL; 
 }
 
 // 지정 파일을 빼고 임의의 파일을 얻습니다.
 const char* nears_get_random(const char* fullpath)
 {
 	g_return_val_if_fail(fullpath != NULL, NULL);
-	if (cfgs.nears->len == 0)
-		return NULL; // 근처 파일이 없으면 NULL
+	if (cfgs.nears->len <= 1)	// 자기 자신만 있거나 근처 파일이 없으면
+		return NULL;
 	guint index = g_random_int_range(0, (gint)cfgs.nears->len);
 	while (true)
 	{

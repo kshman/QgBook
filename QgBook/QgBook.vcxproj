@@ -164,6 +164,7 @@
     </ClCompile>
     <ClCompile Include="main.c" />
     <ClCompile Include="read_window.c" />
+    <ClCompile Include="renex_dialog.c" />
     <ClCompile Include="resg.c">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>

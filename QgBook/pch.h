@@ -26,4 +26,7 @@
 #include <sqlite3.h>
 #include <zlib.h>
 #include <zip.h>
+#ifdef _WIN32
+#include <gdk/win32/gdkwin32.h>
+#endif
 

@@ -106,9 +106,11 @@ extern void movloc_free(MoveLocation* moves, int count);
 
 // 근처 파일
 extern bool nears_build(const char* dir, NearExtentionCompare compare);
-extern const char* nears_get_prev(const char* fullpath, bool remove);
-extern const char* nears_get_next(const char* fullpath, bool remove);
+extern const char* nears_get_prev(const char* fullpath);
+extern const char* nears_get_next(const char* fullpath);
 extern const char* nears_get_random(const char* fullpath);
+extern const char* nears_get_for_remove(const char* fullpath);
+
 
 // 단축키
 extern void shortcut_register(void);

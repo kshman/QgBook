@@ -60,6 +60,9 @@ struct ReadWindow
 {
 	// 윈도우
 	GtkWidget* window;
+#ifdef _WIN32
+	HWND hwnd;
+#endif
 
 	GtkWidget* title_label;
 	GtkWidget* info_label;
@@ -508,7 +511,7 @@ static void page_control(ReadWindow* self, BookControl c)
 		case BOOK_CTRL_SCAN_PREV:
 		{
 			nears_build(self->book->dir_name, self->book->func.ext_compare);
-			const char* prev = nears_get_prev(self->book->full_name, false);
+			const char* prev = nears_get_prev(self->book->full_name);
 			if (prev == NULL)
 				notify(self, 0, _("No previous book found"));
 			else
@@ -523,7 +526,7 @@ static void page_control(ReadWindow* self, BookControl c)
 		case BOOK_CTRL_SCAN_NEXT:
 		{
 			nears_build(self->book->dir_name, self->book->func.ext_compare);
-			const char* next = nears_get_next(self->book->full_name, false);
+			const char* next = nears_get_next(self->book->full_name);
 			if (next == NULL)
 				notify(self, 0, _("No next book found"));
 			else
@@ -539,10 +542,14 @@ static void page_control(ReadWindow* self, BookControl c)
 		{
 			nears_build(self->book->dir_name, self->book->func.ext_compare);
 			const char* random = nears_get_random(self->book->full_name);
-			g_assert(random != NULL);
-			GFile* file = g_file_new_for_path(random);
-			open_book(self, file);
-			g_object_unref(file);
+			if (random == NULL)
+				notify(self, 0, _("No random book found"));
+			else
+			{
+				GFile* file = g_file_new_for_path(random);
+				open_book(self, file);
+				g_object_unref(file);
+			}
 			break;
 		}
 
@@ -577,6 +584,39 @@ static void signal_destroy(GtkWidget* widget, ReadWindow* self)
 
 	g_free(self);
 }
+
+#ifdef _WIN32
+// 맵 콜백
+static void signal_map(GtkWidget* widget, ReadWindow* self)
+{
+	GdkSurface* surface = gtk_native_get_surface(GTK_NATIVE(widget));
+	if (GDK_IS_WIN32_SURFACE(surface))
+	{
+		self->hwnd = gdk_win32_surface_get_handle(surface);
+		const int x = config_get_int(CONFIG_WINDOW_X, true);
+		const int y = config_get_int(CONFIG_WINDOW_Y, true);
+		if (self->hwnd && x >= 0 && y >= 0)
+			SetWindowPos(self->hwnd, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+	}
+}
+
+// 윈도우 닫히기 전에 콜백
+static gboolean signal_close_request(GtkWidget* widget, ReadWindow* self)
+{
+	// 좌표 저장
+	GtkWindow* window = GTK_WINDOW(widget);
+	if (self->hwnd && !gtk_window_is_maximized(window) && !gtk_window_is_fullscreen(window))
+	{
+		RECT rc;
+		if (GetWindowRect(self->hwnd, &rc))
+		{
+			config_set_int(CONFIG_WINDOW_X, rc.left, false);
+			config_set_int(CONFIG_WINDOW_Y, rc.top, false);
+		}
+	}
+	return false;
+}
+#endif
 
 // 윈도우 각종 알림 콜백
 static void signal_notify(GObject* object, GParamSpec* pspec, ReadWindow* self)
@@ -923,23 +963,42 @@ static void shortcut_delete_book(ReadWindow* self)
 
 	if (config_get_bool(CONFIG_GENERAL_CONFIRM_DELETE, true))
 	{
+		reset_key(self);	// 다이얼로그가 키 뗌을 막아버리므로 키 입력 초기화
+
 		bool ret = doumi_mesg_box(GTK_WINDOW(self->window),
 			_("Delete current book?"), self->book->base_name, true);
 		if (!ret)
 			return; // 취소
 	}
 
+	// 책 지우기 전에 근처 파일을 만들어 놔야 한다
+	nears_build(self->book->dir_name, self->book->func.ext_compare);
+
+	// 실제 지움
 	if (!book_delete(self->book))
 	{
 		notify(self, 0, _("Failed to delete book"));
 		return;
 	}
 
-	self->book->cur_page = 0; // 책이 지워졌으므로 페이지는 0으로 초기화
-	close_book(self);
+	// 책이 지워졌으므로 페이지는 0으로 초기화.
+	// 어짜피 close_book에서 저장하므로 페이지만 0으로 하면 된다
+	self->book->cur_page = 0; 
 
-	//const char* full_name = self->book->full_name;
-	// TODO: 다음책으로 넘어가야 되는데...
+	// 다음 책으로 넘어가보자
+	const char* next = nears_get_for_remove(self->book->full_name);
+	if (next == NULL)
+	{
+		// 다음 책이 없으면 그냥 닫기
+		notify(self, 0, _("No next book found"));
+		close_book(self);
+	}
+	else
+	{
+		GFile* file = g_file_new_for_path(next);
+		open_book(self, file);
+		g_object_unref(file);
+	}
 }
 
 // 단축키 - 책 이름 바꾸기
@@ -1295,6 +1354,10 @@ ReadWindow* read_window_new(GtkApplication* app)
 	gtk_widget_set_size_request(GTK_WIDGET(self->window), 600, 400);
 	g_signal_connect(self->window, "destroy", G_CALLBACK(signal_destroy), self);
 	g_signal_connect(self->window, "notify", G_CALLBACK(signal_notify), self);
+#ifdef _WIN32
+	g_signal_connect(self->window, "map", G_CALLBACK(signal_map), self);
+	g_signal_connect(self->window, "close-request", G_CALLBACK(signal_close_request), self);
+#endif
 
 	// 팡고 글꼴
 	self->notify_font = pango_font_description_from_string(

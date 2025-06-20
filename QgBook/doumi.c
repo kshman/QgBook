@@ -58,6 +58,38 @@ void doumi_unlock_program(void)
 #endif
 }
 
+// 확장자 가져오기
+void doumi_get_extension(const char* filename, char *extension, size_t size)
+{
+	if (!filename || !extension || size == 0)
+	{
+		if (extension) *extension = '\0'; // 유효하지 않으면 빈 문자열
+		return;
+	}
+	const char* ext = strrchr(filename, '.');
+	if (!ext || ext == filename) // '.'이 없거나 파일 이름이 '.'로 시작하면
+	{
+		*extension = '\0'; // 빈 문자열
+		return;
+	}
+	ext++; // '.' 다음부터
+	if (size > 0)
+	{
+		g_strlcpy(extension, ext, size); // 확장자 복사
+		if (size > 0 && extension[size - 1] == '\0') // 널 종료자 확인
+			return;
+	}
+	else
+	{
+		// size가 0이면 확장자 길이만큼 반환
+		const size_t len = strlen(ext);
+		if (len < size) // 버퍼 크기보다 작으면
+			g_strlcpy(extension, ext, len + 1); // 널 종료자 포함해서 복사
+		else
+			*extension = '\0'; // 버퍼가 작으면 빈 문자열
+	}
+}
+
 // 이미지 파일인가 확장자로 검사
 bool doumi_is_image_file(const char* filename)
 {
