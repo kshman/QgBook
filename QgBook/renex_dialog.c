@@ -5,13 +5,13 @@
 // 확장 파일 이름 바꾸기 대화상자
 typedef struct RenEx
 {
-	GtkWindow* dialog;
+	GtkWindow* window;	// 상속
 
-	GtkWidget* name;
-	GtkWidget* author;
-	GtkWidget* title;
-	GtkWidget* index;
-	GtkWidget* extra;
+	GtkWidget* name;	// 만들어진 파일 이름
+	GtkWidget* author;	// 작가
+	GtkWidget* title;	// 책 제목
+	GtkWidget* index;	// 순번
+	GtkWidget* extra;	// 추가 정보
 
 	char extension[64];
 	char filename[2048];
@@ -142,14 +142,14 @@ static void parse_file_name(RenEx* self, const char* filename)
 static void cancel_callback(GtkWidget* widget, RenEx* self)
 {
 	self->response = GTK_RESPONSE_CANCEL;
-	gtk_window_close(self->dialog);
+	gtk_window_close(self->window);
 }
 
 // OK 콜백
 static void ok_callback(GtkWidget* widget, RenEx* self)
 {
 	self->response = GTK_RESPONSE_OK;
-	gtk_window_close(self->dialog);
+	gtk_window_close(self->window);
 }
 
 // 다시 열기 콜백
@@ -157,7 +157,7 @@ static void reopen_callback(GtkWidget* widget, RenEx* self)
 {
 	self->response = GTK_RESPONSE_OK;
 	self->reopen = true; // 다시 열기 플래그 설정
-	gtk_window_close(self->dialog);
+	gtk_window_close(self->window);
 }
 
 // 엔트리 키 눌림
@@ -261,14 +261,14 @@ static RenEx* renex_new(GtkWindow* parent, const char* filename)
 {
 	RenEx* self = g_new0(RenEx, 1);
 
-	self->dialog = GTK_WINDOW(gtk_window_new());
-	gtk_window_set_transient_for(self->dialog, parent);
-	gtk_window_set_title(self->dialog, _("Rename book"));
-	gtk_window_set_resizable(self->dialog, false);
-	gtk_window_set_modal(self->dialog, true);
-	gtk_window_set_default_size(self->dialog, 670, 350);
-	gtk_widget_set_size_request(GTK_WIDGET(self->dialog), 670, 350);
-	g_signal_connect(self->dialog, "destroy", G_CALLBACK(signal_destroy), self);
+	self->window = GTK_WINDOW(gtk_window_new());
+	gtk_window_set_transient_for(self->window, parent);
+	gtk_window_set_title(self->window, _("Rename book"));
+	gtk_window_set_resizable(self->window, false);
+	gtk_window_set_modal(self->window, true);
+	gtk_window_set_default_size(self->window, 670, 350);
+	gtk_widget_set_size_request(GTK_WIDGET(self->window), 670, 350);
+	g_signal_connect(self->window, "destroy", G_CALLBACK(signal_destroy), self);
 
 	// 콘텐츠 영역
 	GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -341,7 +341,7 @@ static RenEx* renex_new(GtkWindow* parent, const char* filename)
 	// 콘텐츠 영역 설정
 	gtk_box_append(GTK_BOX(box), grid);
 	gtk_box_append(GTK_BOX(box), button_box);
-	gtk_window_set_child(self->dialog, box);
+	gtk_window_set_child(self->window, box);
 
 	//
 	parse_file_name(self, filename);
@@ -360,5 +360,5 @@ void renex_show_async(GtkWindow* parent, const char* filename, RenameCallback ca
 	self->callback = callback;
 	self->user_data = user_data;
 
-	gtk_window_present(self->dialog);
+	gtk_window_present(self->window);
 }
