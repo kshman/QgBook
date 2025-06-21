@@ -15,15 +15,15 @@ static struct Configs
 	char* cfg_path;
 
 	GHashTable* lang;
-	GHashTable* cache;
 	GHashTable* shortcut;
+	GHashTable* cache;
+	GPtrArray* moves;
 
 	GPtrArray* nears;
 	NearExtentionCompare near_compare;
 	char* near_dir;
 } cfgs =
 {
-	.lang = NULL,
 	.app_path = NULL,
 	.cfg_path = NULL,
 };
@@ -55,7 +55,7 @@ static void cache_item_free(gpointer ptr)
 
 // 캐시 얻기
 // key에 대한 범위 검사를 하지 않습니다.
-static ConfigCacheItem* cache_get_item(const ConfigKeys key)
+static ConfigCacheItem *cache_get_item(const ConfigKeys key)
 {
 	const struct ConfigDefinition* def = &config_defs[key];
 	return g_hash_table_lookup(cfgs.cache, def->name);
@@ -74,7 +74,7 @@ static void cache_set_item(const ConfigKeys key, const ConfigCacheItem* item)
 }
 
 // 타입을 자동으로 알아내서 캐시 얻기
-static const char* cache_auto_get_item(const ConfigKeys key, char* value, const size_t value_size)
+static const char *cache_auto_get_item(const ConfigKeys key, char* value, const size_t value_size)
 {
 	const struct ConfigDefinition* def = &config_defs[key];
 	const ConfigCacheItem* item = g_hash_table_lookup(cfgs.cache, def->name);
@@ -157,7 +157,7 @@ static void sql_free_error(char* err_msg)
 }
 
 // SQL을 엽니다
-static sqlite3* sql_open(void)
+static sqlite3 *sql_open(void)
 {
 	sqlite3* db;
 	if (sqlite3_open(cfgs.cfg_path, &db) == SQLITE_OK)
@@ -261,6 +261,15 @@ static bool sql_set_config(const ConfigKeys key)
 	return ret;
 }
 
+// move 삭제
+static void move_loc_free(gpointer ptr)
+{
+	MoveLocation* p = ptr;
+	g_free(p->alias);
+	g_free(p->folder);
+	g_free(p);
+}
+
 // 언어 처리 데이터 분석
 static void parse_language_hash_table_data(GHashTable* lht, const char* data)
 {
@@ -361,20 +370,20 @@ bool config_init(void)
 	// 캐시
 	cfgs.cache = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, cache_item_free);
 
-	// 데이터베이스를 열고, 테이블이 없으면 만듭니다. 
+	// 데이터베이스를 열고, 테이블이 없으면 만듭니다.
 	sqlite3* db = sql_open();
 	g_return_val_if_fail(db != NULL, false);
 
 	if (!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS configs (key TEXT PRIMARY KEY, value TEXT);") ||
-		!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS moves (folder TEXT PRIMARY KEY, alias TEXT);") ||
+		!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS moves (no INTEGER PRIMARY KEY, alias TEXT, folder TEXT);") ||
 		!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS recently (filename TEXT PRIMARY KEY, page INTEGER);") ||
 		!sql_exec_stmt(
-			db,
-			"CREATE TABLE IF NOT EXISTS bookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT, page INTEGER);")
+				db,
+				"CREATE TABLE IF NOT EXISTS bookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT, page INTEGER);")
 		||
 		!sql_exec_stmt(
-			db,
-			"CREATE TABLE IF NOT EXISTS shortcuts (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, alias TEXT);"))
+				db,
+				"CREATE TABLE IF NOT EXISTS shortcuts (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, alias TEXT);"))
 	{
 		sqlite3_close(db);
 		return false;
@@ -395,6 +404,9 @@ bool config_init(void)
 
 	// 단축키, 읽는 거는 register에서 한다
 	cfgs.shortcut = g_hash_table_new_full(g_int64_hash, g_int64_equal, g_free, g_free);
+
+	// 이동 위치
+	cfgs.moves = g_ptr_array_new_with_free_func(move_loc_free);
 
 	// 근처 파일
 	cfgs.nears = g_ptr_array_new_with_free_func(g_free);
@@ -426,6 +438,8 @@ void config_dispose(void)
 	if (cfgs.nears)
 		g_ptr_array_free(cfgs.nears, true);
 
+	if (cfgs.moves)
+		g_ptr_array_free(cfgs.moves, true);
 	if (cfgs.cache)
 		g_hash_table_destroy(cfgs.cache);
 	if (cfgs.shortcut)
@@ -471,13 +485,29 @@ void config_load_cache(void)
 	sql_select_config(db, CONFIG_SECURITY_PASS_CODE);
 	sql_select_config(db, CONFIG_SECURITY_PASS_USAGE);
 
-	// 이동 디렉토리 여기서 해야하나/
+	// 이동 디렉토리
+	sqlite3_stmt* stmt;
+	const char* sql = "SELECT no, alias, folder FROM moves ORDER BY no;";
+	if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK)
+	{
+		sql_error(db, true);
+		return;
+	}
+	while (sqlite3_step(stmt) == SQLITE_ROW)
+	{
+		MoveLocation* p = g_new(MoveLocation, 1);
+		p->no = sqlite3_column_int(stmt, 0);
+		p->alias = g_strdup((const char*)sqlite3_column_text(stmt, 1));
+		p->folder = g_strdup((const char*)sqlite3_column_text(stmt, 2));
+		g_ptr_array_add(cfgs.moves, p);
+	}
+	movloc_reindex();
 
 	sqlite3_close(db);
 }
 
 // 설정에서 아이템을 가져옵니다
-static const ConfigCacheItem* config_get_item(ConfigKeys key, bool cache_only)
+static const ConfigCacheItem *config_get_item(ConfigKeys key, bool cache_only)
 {
 	if (key <= CONFIG_NONE || key >= CONFIG_MAX_VALUE)
 		return NULL;
@@ -487,7 +517,7 @@ static const ConfigCacheItem* config_get_item(ConfigKeys key, bool cache_only)
 }
 
 // 설정에서 문자열을 가져오는데, 포인터로 반환합니다.
-const char* config_get_string_ptr(ConfigKeys name, bool cache_only)
+const char *config_get_string_ptr(ConfigKeys name, bool cache_only)
 {
 	const ConfigCacheItem* item = config_get_item(name, cache_only);
 	return item == NULL || item->type != CACHE_TYPE_STRING ? NULL : item->s;
@@ -537,7 +567,7 @@ void config_set_string(ConfigKeys name, const char* value, bool cache_only)
 void config_set_bool(ConfigKeys name, bool value, bool cache_only)
 {
 	g_return_if_fail(name > CONFIG_NONE && name < CONFIG_MAX_VALUE);
-	const ConfigCacheItem item = { .b = value, .type = CACHE_TYPE_BOOL };
+	const ConfigCacheItem item = {.b = value, .type = CACHE_TYPE_BOOL};
 	cache_set_item(name, &item);
 	if (!cache_only)
 		sql_set_config(name);
@@ -547,7 +577,7 @@ void config_set_bool(ConfigKeys name, bool value, bool cache_only)
 void config_set_int(ConfigKeys name, gint32 value, bool cache_only)
 {
 	g_return_if_fail(name > CONFIG_NONE && name < CONFIG_MAX_VALUE);
-	const ConfigCacheItem item = { .n = value, .type = CACHE_TYPE_INT };
+	const ConfigCacheItem item = {.n = value, .type = CACHE_TYPE_INT};
 	cache_set_item(name, &item);
 	if (!cache_only)
 		sql_set_config(name);
@@ -557,7 +587,7 @@ void config_set_int(ConfigKeys name, gint32 value, bool cache_only)
 void config_set_long(ConfigKeys name, gint64 value, bool cache_only)
 {
 	g_return_if_fail(name > CONFIG_NONE && name < CONFIG_MAX_VALUE);
-	const ConfigCacheItem item = { .l = value, .type = CACHE_TYPE_LONG };
+	const ConfigCacheItem item = {.l = value, .type = CACHE_TYPE_LONG};
 	cache_set_item(name, &item);
 	if (!cache_only)
 		sql_set_config(name);
@@ -641,134 +671,143 @@ bool recently_set_page(const char* filename, int page)
 	return ret;
 }
 
-// 책 이동 위치를 얻습니다. 반환값은 config_free_moves으로 해제해야 합니다.
-MoveLocation* movloc_get_all(int* ret_count)
+// 책 이동 위치를 추가합니다.
+bool movloc_add(const char* alias, const char* folder)
 {
-	g_return_val_if_fail(ret_count != NULL, NULL);
-
-	sqlite3* db = sql_open();
-	g_return_val_if_fail(db != NULL, NULL);
-
-	sqlite3_stmt* stmt;
-	const char* sql = "SELECT folder, alias FROM moves;";
-	if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK)
+	if (alias == NULL || folder == NULL)
+		return false;
+	if (cfgs.moves->len >= 100)
 	{
-		sql_error(db, true);
-		*ret_count = 0;
-		return NULL;
+		g_log("CONFIG", G_LOG_LEVEL_WARNING, _("Cannot add more than 100 move locations"));
+		return false;
 	}
-
-	GPtrArray* moves = g_ptr_array_new_with_free_func(g_free);
-	while (sqlite3_step(stmt) == SQLITE_ROW)
+	for (guint i = 0; i < cfgs.moves->len; i++)
 	{
-		const char* folder = (const char*)sqlite3_column_text(stmt, 0);
-		const char* alias = (const char*)sqlite3_column_text(stmt, 1);
-
-		MoveLocation* move = g_new(MoveLocation, 1);
-		move->folder = g_strdup(folder ? folder : "");
-		move->alias = g_strdup(alias ? alias : "");
-		g_ptr_array_add(moves, move);
+		MoveLocation* p = (MoveLocation*)g_ptr_array_index(cfgs.moves, i);
+		if (g_strcmp0(p->folder, folder) == 0)
+		{
+			g_log("CONFIG", G_LOG_LEVEL_WARNING, _("Move location with the same alias or folder already exists"));
+			return false;
+		}
 	}
-
-	sqlite3_finalize(stmt);
-	sqlite3_close(db);
-
-	if (moves->len == 0)
-	{
-		g_ptr_array_free(moves, TRUE);
-		*ret_count = 0;
-		return NULL;
-	}
-
-	MoveLocation* result = (MoveLocation*)g_ptr_array_free(moves, FALSE);
-	*ret_count = (int)moves->len;
-	return result;
+	MoveLocation* p = g_new(MoveLocation, 1);
+	p->no = (int)cfgs.moves->len; // 현재 길이로 번호 설정
+	p->alias = g_strdup(alias);
+	p->folder = g_strdup(folder);
+	g_ptr_array_add(cfgs.moves, p);
+	return true;
 }
 
-// 책 이동 위치를 추가하거나 바꿉니다.
-bool movloc_set(const char* folder, const char* alias)
+// 책 이동 위치를 고칩니다.
+void movloc_edit(int no, const char* alias, const char* folder)
 {
-	g_return_val_if_fail(folder != NULL && alias != NULL, false);
+	if (alias == NULL || folder == NULL)
+		return;
+	if (no < 0 || no >= cfgs.moves->len)
+		return;
 
-	sqlite3* db = sql_open();
-	g_return_val_if_fail(db != NULL, false);
+	MoveLocation* p = (MoveLocation*)g_ptr_array_index(cfgs.moves, no);
+	g_free(p->alias);
+	g_free(p->folder);
+	p->alias = g_strdup(alias);
+	p->folder = g_strdup(folder);
+}
 
-	sqlite3_stmt* stmt;
-	const char* sql = "INSERT OR REPLACE INTO moves (folder, alias) VALUES (?, ?);";
-	if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK)
+// 책 이동 위치 순번을 다시 설정합니다.
+void movloc_reindex(void)
+{
+	for (guint i = 0; i < cfgs.moves->len; i++)
 	{
-		sql_error(db, true);
-		return false;
+		MoveLocation* p = (MoveLocation*)g_ptr_array_index(cfgs.moves, i);
+		p->no = (int)i; // 현재 인덱스로 번호 설정
 	}
-
-	sqlite3_bind_text(stmt, 1, folder, -1, SQLITE_STATIC);
-	sqlite3_bind_text(stmt, 2, alias, -1, SQLITE_STATIC);
-
-	if (sqlite3_step(stmt) != SQLITE_DONE)
-	{
-		sqlite3_finalize(stmt);
-		sql_error(db, true);
-		return false;
-	}
-
-	sqlite3_finalize(stmt);
-	sqlite3_close(db);
-	return true;
 }
 
 // 책 이동 위치를 삭제합니다.
-bool movloc_delete(const char* folder)
+bool movloc_delete(int no)
 {
-	g_return_val_if_fail(folder != NULL, false);
-
-	sqlite3* db = sql_open();
-	g_return_val_if_fail(db != NULL, false);
-
-	sqlite3_stmt* stmt;
-	const char* sql = "DELETE FROM moves WHERE folder = ?;";
-	if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK)
-	{
-		sql_error(db, true);
+	if (no < 0 || no >= cfgs.moves->len)
 		return false;
-	}
 
-	sqlite3_bind_text(stmt, 1, folder, -1, SQLITE_STATIC);
+	g_ptr_array_remove_index(cfgs.moves, no);
+	movloc_reindex();
 
-	if (sqlite3_step(stmt) != SQLITE_DONE)
-	{
-		sqlite3_finalize(stmt);
-		sql_error(db, true);
-		return false;
-	}
-
-	sqlite3_finalize(stmt);
-	sqlite3_close(db);
 	return true;
 }
 
-// 책 이동 위치를 해제 합니다. movloc_get_all 함수로 얻은 값을 넣습니다.
-void movloc_free(MoveLocation* moves, int count)
+// 책 이동 위치의 순번을 바꿉니다.
+bool movloc_swap(int from, int to)
 {
-	if (!moves || count <= 0)
-		return;
-	for (int i = 0; i < count; ++i)
+	if (from < 0 || from >= cfgs.moves->len || to < 0 || to >= cfgs.moves->len || from == to)
+		return false;
+
+	MoveLocation* p1 = (MoveLocation*)g_ptr_array_index(cfgs.moves, from);
+	MoveLocation* p2 = (MoveLocation*)g_ptr_array_index(cfgs.moves, to);
+
+	g_ptr_array_index(cfgs.moves, from) = p2;
+	g_ptr_array_index(cfgs.moves, to) = p1;
+
+	movloc_reindex();
+
+	return true;
+}
+
+// 책 이동 위치를 모두 가져옵니다.
+GPtrArray *movloc_get_all_ptr(void)
+{
+	return cfgs.moves;
+}
+
+// 책 이동 위치를 DB에 저장합니다.
+void movloc_commit(void)
+{
+	sqlite3* db = sql_open();
+	g_return_if_fail(db != NULL);
+
+	// 기존 데이터 삭제
+	if (!sql_exec_stmt(db, "DELETE FROM moves;"))
 	{
-		g_free(moves[i].folder);
-		g_free(moves[i].alias);
+		sqlite3_close(db);
+		return;
 	}
-	g_free(moves);
+
+	// 현재 이동 위치를 DB에 저장
+	for (guint i = 0; i < cfgs.moves->len; i++)
+	{
+		MoveLocation* p = (MoveLocation*)g_ptr_array_index(cfgs.moves, i);
+		const char* sql = "INSERT INTO moves (no, alias, folder) VALUES (?, ?, ?);";
+		sqlite3_stmt* stmt;
+		if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK)
+		{
+			sql_error(db, true);
+			return;
+		}
+		sqlite3_bind_int(stmt, 1, p->no);
+		sqlite3_bind_text(stmt, 2, p->alias, -1, SQLITE_STATIC);
+		sqlite3_bind_text(stmt, 3, p->folder, -1, SQLITE_STATIC);
+
+		if (sqlite3_step(stmt) != SQLITE_DONE)
+		{
+			sql_error(db, true);
+			sqlite3_finalize(stmt);
+			return;
+		}
+		sqlite3_finalize(stmt);
+	}
+
+	sqlite3_close(db);
 }
 
 
 // 자연스러운 문자열 비교
 static gint compare_natural_filename(const void* pa, const void* pb)
 {
-	const char* a = *(const char**)pa;  // NOLINT(clang-diagnostic-cast-qual)
-	const char* b = *(const char**)pb;  // NOLINT(clang-diagnostic-cast-qual)
+	const char* a = *(const char**)pa; // NOLINT(clang-diagnostic-cast-qual)
+	const char* b = *(const char**)pb; // NOLINT(clang-diagnostic-cast-qual)
 
 #ifndef _WIN32
 	// 윈도우가 아닌 OS의 비교. UTF-8, 숫자 인식
-	const char* pa_ptr = a, * pb_ptr = b;
+	const char *pa_ptr = a, *pb_ptr = b;
 	while (*pa_ptr && *pb_ptr)
 	{
 		// 숫자 구간 비교
@@ -884,8 +923,23 @@ bool nears_build(const char* dir, NearExtentionCompare compare)
 	return true;
 }
 
+// 지정한 파일이 없으면 근처 파일을 만듭니다
+bool nears_build_if(const char* dir, NearExtentionCompare compare, const char* fullpath)
+{
+	if (fullpath && *fullpath != '\0')
+	{
+		for (guint i = 0; i < cfgs.nears->len; ++i)
+		{
+			const char* item = g_ptr_array_index(cfgs.nears, i);
+			if (g_strcmp0(item, fullpath) == 0)
+				return true; // 이미 근처 파일에 있으면 아무것도 안함
+		}
+	}
+	return nears_build(dir, compare);
+}
+
 // 지정 파일의 앞쪽 근처 파일을 얻습니다.
-const char* nears_get_prev(const char* fullpath)
+const char *nears_get_prev(const char* fullpath)
 {
 	g_return_val_if_fail(fullpath != NULL, NULL);
 	for (guint i = 0; i < cfgs.nears->len; ++i)
@@ -901,7 +955,7 @@ const char* nears_get_prev(const char* fullpath)
 }
 
 // 지정 파일의 뒤쪽 근처 파일을 얻습니다.
-const char* nears_get_next(const char* fullpath)
+const char *nears_get_next(const char* fullpath)
 {
 	g_return_val_if_fail(fullpath != NULL, NULL);
 	for (guint i = 0; i < cfgs.nears->len; ++i)
@@ -917,10 +971,10 @@ const char* nears_get_next(const char* fullpath)
 }
 
 // 지정 파일을 빼고 임의의 파일을 얻습니다.
-const char* nears_get_random(const char* fullpath)
+const char *nears_get_random(const char* fullpath)
 {
 	g_return_val_if_fail(fullpath != NULL, NULL);
-	if (cfgs.nears->len <= 1)	// 자기 자신만 있거나 근처 파일이 없으면
+	if (cfgs.nears->len <= 1) // 자기 자신만 있거나 근처 파일이 없으면
 		return NULL;
 	guint index = g_random_int_range(0, (gint)cfgs.nears->len);
 	while (true)
@@ -933,7 +987,7 @@ const char* nears_get_random(const char* fullpath)
 }
 
 // 지정 파일을 삭제하고 근처 파일을 얻습니다
-const char* nears_get_for_remove(const char* fullpath)
+const char *nears_get_for_remove(const char* fullpath)
 {
 	g_return_val_if_fail(fullpath != NULL, NULL);
 	if (cfgs.nears->len == 1)
@@ -956,11 +1010,11 @@ const char* nears_get_for_remove(const char* fullpath)
 		g_ptr_array_remove_index(cfgs.nears, i); // 자기 자신을 제거
 		return ret;
 	}
-	return NULL; 
+	return NULL;
 }
 
 // 지정 파일을 삭제하고 새로운 항목을 추가하면서, 근처 파일을 얻습니다.
-const char* nears_get_for_rename(const char* fullpath, const char* new_filename)
+const char *nears_get_for_rename(const char* fullpath, const char* new_filename)
 {
 	g_return_val_if_fail(fullpath != NULL && new_filename != NULL, NULL);
 	// 먼저 새 파일 이름을 추가하고
@@ -1006,14 +1060,14 @@ static GdkModifierType parse_modifier(const char* name)
 }
 
 // 단축키 만들기
-static gint64* convert_shortcut(const char* alias)
+static gint64 *convert_shortcut(const char* alias)
 {
 	if (!alias || !*alias)
 		return NULL;
 
 	GdkModifierType mods = 0;
 	const char* p = alias;
-	char keyname[64] = { 0 };
+	char keyname[64] = {0};
 	size_t keyname_len = 0;
 
 	// 파싱: <Modifier>들 먼저
@@ -1107,7 +1161,7 @@ void shortcut_register(void)
 }
 
 // 키 입력값으로 단축키 명령 얻기
-const char* shortcut_lookup(const guint key_val, const GdkModifierType key_state)
+const char *shortcut_lookup(const guint key_val, const GdkModifierType key_state)
 {
 	const gint64 key = ((gint64)key_state << 32) | key_val; // 상위 32비트에 상태, 하위 32비트에 키값
 	const char* action = g_hash_table_lookup(cfgs.shortcut, &key);
@@ -1115,7 +1169,7 @@ const char* shortcut_lookup(const guint key_val, const GdkModifierType key_state
 }
 
 // 언어 찾아보기
-const char* locale_lookup(const char* key)
+const char *locale_lookup(const char* key)
 {
 	const char* lookup = g_hash_table_lookup(cfgs.lang, key);
 	return lookup ? lookup : key;

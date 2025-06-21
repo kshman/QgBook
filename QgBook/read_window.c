@@ -11,9 +11,11 @@ typedef struct PageDialog PageDialog;
 typedef void (*ShortcutFunc)(ReadWindow*);
 
 // 외부 함수
-extern void renex_show_async(GtkWindow* parent, const char* filename, RenameCallback callback, gpointer user_data);
+extern void renex_dialog_show_async(GtkWindow* parent, const char* filename, RenameCallback callback,
+									gpointer user_data);
+extern void move_dialog_show_async(GtkWindow* parent, MoveCallback callback, gpointer user_data);
 
-extern PageDialog* page_dialog_new(GtkWindow* parent, PageSelectCallback callback, gpointer user_data);
+extern PageDialog *page_dialog_new(GtkWindow* parent, PageSelectCallback callback, gpointer user_data);
 extern void page_dialog_dispose(PageDialog* self);
 extern void page_dialog_show_async(PageDialog* self, int page);
 extern void page_dialog_set_book(PageDialog* self, Book* book);
@@ -37,7 +39,7 @@ G_DEFINE_TYPE(ReadDraw, read_draw, GTK_TYPE_DRAWING_AREA)
 static void read_draw_snapshot(GtkWidget* widget, GtkSnapshot* snapshot);
 static gboolean read_draw_focus(GtkWidget* widget, GtkDirectionType direction);
 
-static GtkWidget* read_draw_new(ReadWindow* self)
+static GtkWidget *read_draw_new(ReadWindow* self)
 {
 	GtkWidget* widget = GTK_WIDGET(g_object_new(read_draw_get_type(), NULL));
 	((ReadDraw*)widget)->read_window = self;
@@ -87,7 +89,7 @@ struct ReadWindow
 
 	GtkWidget* draw;
 
-	GHashTable* scmd;
+	GHashTable* shortcuts;
 	guint key_val;
 	GdkModifierType key_state;
 
@@ -131,7 +133,7 @@ static void notify(ReadWindow* self, int timeout, const char* fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	g_vsnprintf(self->notify_text, sizeof(self->notify_text), fmt, ap);  // NOLINT(clang-diagnostic-format-nonliteral)
+	g_vsnprintf(self->notify_text, sizeof(self->notify_text), fmt, ap); // NOLINT(clang-diagnostic-format-nonliteral)
 	va_end(ap);
 
 	if (self->notify_id != 0)
@@ -173,7 +175,7 @@ static void toggle_fullscreen(ReadWindow* self)
 }
 
 // 늘려보기 설정과 메뉴 처리
-static void update_view_zoom(ReadWindow* self, bool zoom, bool redraw)
+static void update_view_zoom(ReadWindow* self, bool zoom)
 {
 	if (self->view_zoom == zoom)
 		return;
@@ -183,12 +185,11 @@ static void update_view_zoom(ReadWindow* self, bool zoom, bool redraw)
 
 	gtk_check_button_set_active(GTK_CHECK_BUTTON(self->menu_zoom_check), zoom);
 
-	if (redraw)
-		queue_draw_book(self);
+	queue_draw_book(self);
 }
 
 // 읽기 방향 설정과 메뉴 처리
-static void update_view_mode(ReadWindow* self, ViewMode mode, bool redraw)
+static void update_view_mode(ReadWindow* self, ViewMode mode)
 {
 	if (self->view_mode == mode)
 		return;
@@ -200,15 +201,12 @@ static void update_view_mode(ReadWindow* self, ViewMode mode, bool redraw)
 	gtk_image_set_from_paintable(GTK_IMAGE(self->menu_vmode_image), paintable);
 	gtk_check_button_set_active(GTK_CHECK_BUTTON(self->menu_vmode_radios[mode]), true);
 
-	if (redraw)
-	{
-		// 책 준비
-		queue_draw_book(self);
-	}
+	// 책 준비
+	queue_draw_book(self);
 }
 
 // 보기 품질 설정과 메뉴 처리
-static void update_view_quality(ReadWindow* self, ViewQuality quality, bool redraw)
+static void update_view_quality(ReadWindow* self, ViewQuality quality)
 {
 	if (self->view_quality == quality)
 		return;
@@ -218,13 +216,12 @@ static void update_view_quality(ReadWindow* self, ViewQuality quality, bool redr
 
 	gtk_check_button_set_active(GTK_CHECK_BUTTON(self->menu_vquality_radios[quality]), true);
 
-	if (redraw)
-		queue_draw_book(self);
+	queue_draw_book(self);
 }
 
 // 보기 정렬 설정과 메뉴 처리
 // 실행 중에만 적용되며 설정에 저장하지 않는다
-static void update_view_align(ReadWindow* self, HorizAlign align, bool redraw)
+static void update_view_align(ReadWindow* self, HorizAlign align)
 {
 	if (self->view_align == align)
 		return;
@@ -233,12 +230,11 @@ static void update_view_align(ReadWindow* self, HorizAlign align, bool redraw)
 
 	gtk_check_button_set_active(GTK_CHECK_BUTTON(self->menu_valign_radios[align]), true);
 
-	if (redraw)
-		queue_draw_book(self);
+	queue_draw_book(self);
 }
 
 // 보기 여백 설정과 메뉴 처리
-static void update_view_margin(ReadWindow* self, int margin, bool redraw)
+static void update_view_margin(ReadWindow* self, int margin)
 {
 	if (self->view_margin == margin)
 		return;
@@ -248,8 +244,7 @@ static void update_view_margin(ReadWindow* self, int margin, bool redraw)
 
 	gtk_spin_button_set_value(GTK_SPIN_BUTTON(self->menu_vmargin_spin), margin);
 
-	if (redraw)
-		queue_draw_book(self);
+	queue_draw_book(self);
 }
 
 // 현재 책 정보를 헤더바에 표시
@@ -326,7 +321,7 @@ static void close_book(ReadWindow* self)
 // file은 호출한 쪽에서 처분할 것
 static void open_book(ReadWindow* self, GFile* file)
 {
-	const GFileType type = doumi_get_file_type_from_gfile(file);
+	const GFileType type = doumi_get_file_type_from(file);
 	if (type == G_FILE_TYPE_UNKNOWN || type == G_FILE_TYPE_DIRECTORY)
 	{
 		// 파일이 없거나
@@ -358,7 +353,7 @@ static void open_book(ReadWindow* self, GFile* file)
 	if (book == NULL)
 		return; // 오류 메시지는 오류 난데서 표시하고 여기서는 그냥 나감
 
-	close_book(self);	// 이 안에서 queue_draw가 호출되므로 아래쪽에서 안해도 된다
+	close_book(self); // 이 안에서 queue_draw가 호출되므로 아래쪽에서 안해도 된다
 
 	config_set_string(CONFIG_FILE_LAST_FILE, book->full_name, false);
 	config_set_string(CONFIG_FILE_LAST_DIRECTORY, book->dir_name, false);
@@ -437,7 +432,7 @@ static void prepare_page(ReadWindow* self)
 
 	// 캐시를 어기에 넣어야 하나?
 
-	switch (self->view_mode)  // NOLINT(clang-diagnostic-switch-enum)
+	switch (self->view_mode) // NOLINT(clang-diagnostic-switch-enum)
 	{
 		case VIEW_MODE_FIT:
 			self->page_left = book_read_page(self->book, cur);
@@ -489,7 +484,7 @@ static void page_control(ReadWindow* self, BookControl c)
 	if (self->book == NULL)
 		return;
 
-	switch (c)  // NOLINT(clang-diagnostic-switch-enum)
+	switch (c) // NOLINT(clang-diagnostic-switch-enum)
 	{
 		case BOOK_CTRL_PREV:
 			if (!book_move_prev(self->book, self->view_mode))
@@ -611,8 +606,8 @@ static void signal_destroy(GtkWidget* widget, ReadWindow* self)
 		pango_font_description_free(self->notify_font);
 
 	// 여기서 해제하면 된다구
-	if (self->scmd)
-		g_hash_table_destroy(self->scmd);
+	if (self->shortcuts)
+		g_hash_table_destroy(self->shortcuts);
 
 	g_free(self);
 }
@@ -752,10 +747,10 @@ static void signal_mouse_click(GtkGestureClick* gesture, int n_press, double x, 
 
 // 키보드 떼임
 static gboolean signal_key_released(GtkEventControllerKey* controller,
-	guint value,
-	guint code,
-	GdkModifierType state,
-	ReadWindow* self)
+									guint value,
+									guint code,
+									GdkModifierType state,
+									ReadWindow* self)
 {
 	reset_key(self);
 	return false;
@@ -763,10 +758,10 @@ static gboolean signal_key_released(GtkEventControllerKey* controller,
 
 // 키보드 눌림
 static gboolean signal_key_pressed(GtkEventControllerKey* controller,
-	guint value,
-	guint code,
-	GdkModifierType state,
-	ReadWindow* self)
+								   guint value,
+								   guint code,
+								   GdkModifierType state,
+								   ReadWindow* self)
 {
 	// 보조키는 쉬프트/컨트롤/알트/슈퍼/하이퍼/메타만 남기고 나머지는 제거
 	state &= GDK_SHIFT_MASK | GDK_CONTROL_MASK | GDK_ALT_MASK | GDK_SUPER_MASK | GDK_HYPER_MASK | GDK_META_MASK;
@@ -782,7 +777,7 @@ static gboolean signal_key_pressed(GtkEventControllerKey* controller,
 	const char* action = shortcut_lookup(value, state);
 	if (action != NULL)
 	{
-		const ShortcutFunc func = (ShortcutFunc)g_hash_table_lookup(self->scmd, action);
+		const ShortcutFunc func = (ShortcutFunc)g_hash_table_lookup(self->shortcuts, action);
 		if (func != NULL)
 		{
 			func(self);
@@ -821,19 +816,19 @@ static void menu_exit_click(GtkButton* button, ReadWindow* self)
 static void menu_view_zoom_toggled(GtkCheckButton* button, ReadWindow* self)
 {
 	const gboolean b = gtk_check_button_get_active(GTK_CHECK_BUTTON(self->menu_zoom_check));
-	update_view_zoom(self, b, true);
+	update_view_zoom(self, b);
 }
 
 // 보기 모드 누르기
 static void menu_view_mode_clicked(GtkButton* button, ReadWindow* self)
 {
 	const ViewMode mode =
-		self->view_mode == VIEW_MODE_FIT
-		? VIEW_MODE_LEFT_TO_RIGHT
-		: self->view_mode == VIEW_MODE_LEFT_TO_RIGHT
-		? VIEW_MODE_RIGHT_TO_LEFT
-		: /*self->view_mode == VIEW_MODE_RIGHT_TO_LEFT ? VIEW_MODE_FIT :*/ VIEW_MODE_FIT;
-	update_view_mode(self, mode, true);
+			self->view_mode == VIEW_MODE_FIT
+				? VIEW_MODE_LEFT_TO_RIGHT
+				: self->view_mode == VIEW_MODE_LEFT_TO_RIGHT
+					  ? VIEW_MODE_RIGHT_TO_LEFT
+					  : /*self->view_mode == VIEW_MODE_RIGHT_TO_LEFT ? VIEW_MODE_FIT :*/ VIEW_MODE_FIT;
+	update_view_mode(self, mode);
 }
 
 // 보기 방향 선택 바뀜
@@ -842,7 +837,7 @@ static void menu_view_mode_toggled(GtkCheckButton* button, ReadWindow* self)
 	if (!gtk_check_button_get_active(button))
 		return;
 	ViewMode mode = (ViewMode)GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "tag"));
-	update_view_mode(self, mode, true);
+	update_view_mode(self, mode);
 }
 
 // 보기 품질 선택 바뀜
@@ -851,7 +846,7 @@ static void menu_view_quality_toggled(GtkCheckButton* button, ReadWindow* self)
 	if (!gtk_check_button_get_active(button))
 		return;
 	ViewQuality quality = (ViewQuality)GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "tag"));
-	update_view_quality(self, quality, true);
+	update_view_quality(self, quality);
 }
 
 // 보기 정렬 선택 바뀜
@@ -860,14 +855,14 @@ static void menu_view_align_toggled(GtkCheckButton* button, ReadWindow* self)
 	if (!gtk_check_button_get_active(button))
 		return;
 	HorizAlign align = (HorizAlign)GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "tag"));
-	update_view_align(self, align, true);
+	update_view_align(self, align);
 }
 
 // 보기 여백 선택 바뀜
 static void menu_view_margin_changed(GtkSpinButton* spin, ReadWindow* self)
 {
 	int margin = (int)gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
-	update_view_margin(self, margin, true);
+	update_view_margin(self, margin);
 }
 
 // 단축키 - 아무것도 안함
@@ -930,7 +925,7 @@ static void shortcut_open_last_book(ReadWindow* self)
 	if (last && last[0] != '\0')
 	{
 		if (self->book != NULL && g_strcmp0(self->book->full_name, last) == 0)
-			return;	// 이미 열려있는 책이면 그냥 리턴
+			return; // 이미 열려있는 책이면 그냥 리턴
 
 		GFile* file = g_file_new_for_path(last);
 		if (file != NULL && g_file_query_exists(file, NULL))
@@ -1000,10 +995,10 @@ static void shortcut_delete_book(ReadWindow* self)
 
 	if (config_get_bool(CONFIG_GENERAL_CONFIRM_DELETE, true))
 	{
-		reset_key(self);	// 다이얼로그가 키 뗌을 막아버리므로 키 입력 초기화
+		reset_key(self); // 다이얼로그가 키 뗌을 막아버리므로 키 입력 초기화
 
 		bool ret = doumi_mesg_box(GTK_WINDOW(self->window),
-			_("Delete current book?"), self->book->base_name, true);
+								  _("Delete current book?"), self->book->base_name, true);
 		if (!ret)
 			return; // 취소
 	}
@@ -1076,9 +1071,16 @@ static void shortcut_rename_book(ReadWindow* self)
 	if (self->book == NULL)
 		return;
 
-	reset_key(self);	// 다이얼로그가 키를 먹어버리므로 키 입력 초기화
+	reset_key(self); // 다이얼로그가 키를 먹어버리므로 키 입력 초기화
 
-	renex_show_async(GTK_WINDOW(self->window), self->book->base_name, cb_rename_book_done, self);
+	renex_dialog_show_async(GTK_WINDOW(self->window), self->book->base_name, cb_rename_book_done, self);
+}
+
+// 책 옮기기 콜백
+void cb_move_book_done(gpointer sender, const char* directory)
+{
+	ReadWindow* self = sender;
+	notify(self, 0, directory);
 }
 
 // 단축키 - 책 옮기기
@@ -1088,7 +1090,9 @@ static void shortcut_move_book(ReadWindow* self)
 	if (self->book == NULL)
 		return;
 
-	notify(self, 0, _("Failed to move book"));
+	reset_key(self); // 다이얼로그가 키를 먹어버리므로 키 입력 초기화
+
+	move_dialog_show_async(GTK_WINDOW(self->window), cb_move_book_done, self);
 }
 
 // 단축키 - 앞 장으로
@@ -1142,7 +1146,7 @@ static void shortcut_page_plus(ReadWindow* self)
 // 단축키 - 쪽 선택
 static void shortcut_page_select(ReadWindow* self)
 {
-	reset_key(self);	// 다이얼로그가 키를 먹어버리므로 키 입력 초기화
+	reset_key(self); // 다이얼로그가 키를 먹어버리므로 키 입력 초기화
 	page_control(self, BOOK_CTRL_SELECT);
 }
 
@@ -1170,7 +1174,31 @@ static void shortcut_view_mode_left_right(ReadWindow* self)
 	if (self->view_mode == VIEW_MODE_FIT)
 		return; // 맞춰 읽을 때는 방향 전환 안함
 	ViewMode mode = self->view_mode == VIEW_MODE_LEFT_TO_RIGHT ? VIEW_MODE_RIGHT_TO_LEFT : VIEW_MODE_LEFT_TO_RIGHT;
-	update_view_mode(self, mode, true);
+	update_view_mode(self, mode);
+}
+
+// 단축키 - 보기 정렬 가운데
+static void shortcut_view_align_center(ReadWindow* self)
+{
+	if (self->view_align == HORIZ_ALIGN_CENTER)
+		return; // 이미 가운데 정렬이면 안함
+	update_view_align(self, HORIZ_ALIGN_CENTER);
+}
+
+// 단축키 - 보기 정렬 왼쪽
+static void shortcut_view_align_left(ReadWindow* self)
+{
+	if (self->view_align == HORIZ_ALIGN_LEFT)
+		return; // 이미 왼쪽 정렬이면 안함
+	update_view_align(self, HORIZ_ALIGN_LEFT);
+}
+
+// 단축키 - 보기 정렬 오른쪽
+static void shortcut_view_align_right(ReadWindow* self)
+{
+	if (self->view_align == HORIZ_ALIGN_RIGHT)
+		return; // 이미 오른쪽 정렬이면 안함
+	update_view_align(self, HORIZ_ALIGN_RIGHT);
 }
 #pragma endregion
 
@@ -1191,7 +1219,7 @@ static void paint_page_fit(ReadWindow* self, GtkSnapshot* snapshot, GdkTexture* 
 	const float draw_h = th * scale;
 
 	float x;
-	switch (self->view_align)  // NOLINT(clang-diagnostic-switch-enum)
+	switch (self->view_align) // NOLINT(clang-diagnostic-switch-enum)
 	{
 		case HORIZ_ALIGN_CENTER:
 			x = (width - draw_w) / 2.0f;
@@ -1211,7 +1239,8 @@ static void paint_page_fit(ReadWindow* self, GtkSnapshot* snapshot, GdkTexture* 
 }
 
 // 텍스쳐 두장을 나란히 화면 중앙에 붙여서 그리기 + 마진 지원
-static void paint_page_dual(ReadWindow* self, GtkSnapshot* snapshot, GdkTexture* left, GdkTexture* right, float width, float height)
+static void paint_page_dual(ReadWindow* self, GtkSnapshot* snapshot, GdkTexture* left, GdkTexture* right, float width,
+							float height)
 {
 	g_return_if_fail(left != NULL);
 	g_return_if_fail(right != NULL);
@@ -1233,7 +1262,7 @@ static void paint_page_dual(ReadWindow* self, GtkSnapshot* snapshot, GdkTexture*
 	const float total_w = draw_lw + draw_rw;
 
 	float x0;
-	switch (self->view_align)  // NOLINT(clang-diagnostic-switch-enum)
+	switch (self->view_align) // NOLINT(clang-diagnostic-switch-enum)
 	{
 		case HORIZ_ALIGN_CENTER:
 			x0 = (width - total_w) / 2.0f;
@@ -1370,7 +1399,7 @@ static void read_draw_snapshot(GtkWidget* widget, GtkSnapshot* snapshot)
 	float height = (float)gtk_widget_get_height(widget);
 
 	// 배경
-	const GdkRGBA red = { 0.1f, 0.1f, 0.1f, 1.0f };
+	const GdkRGBA red = {0.1f, 0.1f, 0.1f, 1.0f};
 	gtk_snapshot_append_color(snapshot, &red, &GRAPHENE_RECT_INIT(0, 0, width, height));
 
 	// 카이로로 그릴거
@@ -1403,7 +1432,7 @@ static void read_draw_snapshot(GtkWidget* widget, GtkSnapshot* snapshot)
 
 #pragma region 책 읽기 클래스
 // 만들기
-ReadWindow* read_window_new(GtkApplication* app)
+ReadWindow *read_window_new(GtkApplication* app)
 {
 	ReadWindow* self = g_new0(ReadWindow, 1);
 
@@ -1426,13 +1455,11 @@ ReadWindow* read_window_new(GtkApplication* app)
 	g_signal_connect(self->window, "destroy", G_CALLBACK(signal_destroy), self);
 	g_signal_connect(self->window, "notify", G_CALLBACK(signal_notify), self);
 	g_signal_connect(self->window, "close-request", G_CALLBACK(signal_close_request), self);
-#ifdef _WIN32
 	g_signal_connect(self->window, "map", G_CALLBACK(signal_map), self);
-#endif
 
 	// 팡고 글꼴
 	self->notify_font = pango_font_description_from_string(
-		"Malgun Gothic, Apple SD Gothic Neo, Noto Sans CJK KR, Sans 20");
+			"Malgun Gothic, Apple SD Gothic Neo, Noto Sans CJK KR, Sans 20");
 
 	// 메인 메뉴, 헤더바에서 쓸거라 앞쪽에서 만들어 두자
 	GtkWidget* main_popover = gtk_popover_new();
@@ -1666,41 +1693,44 @@ ReadWindow* read_window_new(GtkApplication* app)
 		char* name;
 		ShortcutFunc func;
 	} actions[] =
-	{
-		{ "none", shortcut_none },
-		{ "test", shortcut_test },
-		{ "exit", shortcut_exit },
-		{ "escape", shortcut_escape },
-		{ "file_open", shortcut_file_open },
-		{ "file_close", shortcut_file_close },
-		{ "settings", shortcut_settings },
-		{ "fullscreen", shortcut_fullscreen },
-		{ "open_last_book", shortcut_open_last_book },
-		{ "open_remember", shortcut_open_remember },
-		{ "save_remember", shortcut_save_remember },
-		{ "delete_book", shortcut_delete_book },
-		{ "rename_book", shortcut_rename_book },
-		{ "move_book", shortcut_move_book },
-		{ "page_prev", shortcut_page_prev },
-		{ "page_next", shortcut_page_next },
-		{ "page_first", shortcut_page_first },
-		{ "page_last", shortcut_page_last },
-		{ "page_10_prev", shortcut_page_10_prev },
-		{ "page_10_next", shortcut_page_10_next },
-		{ "page_minus", shortcut_page_minus },
-		{ "page_plus", shortcut_page_plus },
-		{ "page_select", shortcut_page_select },
-		{ "scan_book_prev", shortcut_scan_book_prev },
-		{ "scan_book_next", shortcut_scan_book_next },
-		{ "scan_book_random", shortcut_scan_book_random },
-		{ "view_mode_left_right", shortcut_view_mode_left_right },
-		// 여기까지
-		{ NULL, NULL }
-	};
+			{
+				{"none", shortcut_none},
+				{"test", shortcut_test},
+				{"exit", shortcut_exit},
+				{"escape", shortcut_escape},
+				{"file_open", shortcut_file_open},
+				{"file_close", shortcut_file_close},
+				{"settings", shortcut_settings},
+				{"fullscreen", shortcut_fullscreen},
+				{"open_last_book", shortcut_open_last_book},
+				{"open_remember", shortcut_open_remember},
+				{"save_remember", shortcut_save_remember},
+				{"delete_book", shortcut_delete_book},
+				{"rename_book", shortcut_rename_book},
+				{"move_book", shortcut_move_book},
+				{"page_prev", shortcut_page_prev},
+				{"page_next", shortcut_page_next},
+				{"page_first", shortcut_page_first},
+				{"page_last", shortcut_page_last},
+				{"page_10_prev", shortcut_page_10_prev},
+				{"page_10_next", shortcut_page_10_next},
+				{"page_minus", shortcut_page_minus},
+				{"page_plus", shortcut_page_plus},
+				{"page_select", shortcut_page_select},
+				{"scan_book_prev", shortcut_scan_book_prev},
+				{"scan_book_next", shortcut_scan_book_next},
+				{"scan_book_random", shortcut_scan_book_random},
+				{"view_mode_left_right", shortcut_view_mode_left_right},
+				{"view_align_center", shortcut_view_align_center},
+				{"view_align_left", shortcut_view_align_left},
+				{"view_align_right", shortcut_view_align_right},
+				// 여기까지
+				{NULL, NULL}
+			};
 
-	self->scmd = g_hash_table_new(g_str_hash, g_str_equal);
+	self->shortcuts = g_hash_table_new(g_str_hash, g_str_equal);
 	for (const struct ShortcutAction* act = actions; act->name; ++act)
-		g_hash_table_insert(self->scmd, act->name, (gpointer)act->func);
+		g_hash_table_insert(self->shortcuts, act->name, (gpointer)act->func);
 
 	shortcut_register();
 #pragma endregion
@@ -1717,4 +1747,3 @@ void read_window_show(const ReadWindow* self)
 	gtk_widget_set_visible(self->window, true);
 }
 #pragma endregion
-

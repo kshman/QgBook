@@ -3,7 +3,7 @@
 #include "book.h"
 
 // 확장 파일 이름 바꾸기 대화상자
-typedef struct RenEx
+typedef struct RenExDialog
 {
 	GtkWindow* window;	// 상속
 
@@ -23,10 +23,10 @@ typedef struct RenEx
 	bool reopen;
 
 	GtkResponseType response;
-} RenEx;
+} RenExDialog;
 
 // 파일 이름 만들기
-static void make_file_name(RenEx* self)
+static void make_file_name(RenExDialog* self)
 {
 	if (!self->initialized)
 		return;
@@ -55,7 +55,7 @@ static void make_file_name(RenEx* self)
 }
 
 // 파일 이름 분석
-static void parse_file_name(RenEx* self, const char* filename)
+static void parse_file_name(RenExDialog* self, const char* filename)
 {
 	// 아래 걍 무시되는 경우가 있으니 미리 초기화
 	gtk_label_set_text(GTK_LABEL(self->name), "");
@@ -139,21 +139,21 @@ static void parse_file_name(RenEx* self, const char* filename)
 }
 
 // 취소 콜백
-static void cancel_callback(GtkWidget* widget, RenEx* self)
+static void cancel_callback(GtkWidget* widget, RenExDialog* self)
 {
 	self->response = GTK_RESPONSE_CANCEL;
 	gtk_window_close(self->window);
 }
 
 // OK 콜백
-static void ok_callback(GtkWidget* widget, RenEx* self)
+static void ok_callback(GtkWidget* widget, RenExDialog* self)
 {
 	self->response = GTK_RESPONSE_OK;
 	gtk_window_close(self->window);
 }
 
 // 다시 열기 콜백
-static void reopen_callback(GtkWidget* widget, RenEx* self)
+static void reopen_callback(GtkWidget* widget, RenExDialog* self)
 {
 	self->response = GTK_RESPONSE_OK;
 	self->reopen = true; // 다시 열기 플래그 설정
@@ -166,7 +166,7 @@ static gboolean entry_key_pressed(
 	guint keyval,
 	guint keycode,
 	GdkModifierType state,
-	RenEx* self)
+	RenExDialog* self)
 {
 	if (keyval == GDK_KEY_Escape)
 	{
@@ -180,14 +180,14 @@ static gboolean entry_key_pressed(
 }
 
 // 엔트리 값이 바뀔 때마다 호출되는 콜백
-static void entry_changed(GtkEditable* editable, RenEx* self)
+static void entry_changed(GtkEditable* editable, RenExDialog* self)
 {
 	//const char* text = gtk_editable_get_text(editable);
 	make_file_name(self);
 }
 
 // 엔트리 활성화 시 호출되는 콜백
-static void entry_activate(GtkEntry* entry, RenEx* self)
+static void entry_activate(GtkEntry* entry, RenExDialog* self)
 {
 	if (entry == GTK_ENTRY(self->title))
 	{
@@ -212,7 +212,7 @@ static void entry_activate(GtkEntry* entry, RenEx* self)
 }
 
 // 입력 상자 만들기
-static GtkWidget* create_entry(RenEx* self)
+static GtkWidget* create_entry(RenExDialog* self)
 {
 	GtkWidget* entry = gtk_entry_new();
 	gtk_widget_set_hexpand(entry, true);
@@ -237,7 +237,7 @@ static GtkWidget* create_label(const char* text, GtkAlign align)
 }
 
 // 윈도우 종료되고 나서 콜백
-static void signal_destroy(GtkWidget* widget, RenEx* self)
+static void signal_destroy(GtkWidget* widget, RenExDialog* self)
 {
 	if (self->callback)
 	{
@@ -257,17 +257,15 @@ static void signal_destroy(GtkWidget* widget, RenEx* self)
 }
 
 // 만들기
-static RenEx* renex_new(GtkWindow* parent, const char* filename)
+static RenExDialog* renex_dialog_new(GtkWindow* parent, const char* filename)
 {
-	RenEx* self = g_new0(RenEx, 1);
+	RenExDialog* self = g_new0(RenExDialog, 1);
 
 	self->window = GTK_WINDOW(gtk_window_new());
 	gtk_window_set_transient_for(self->window, parent);
 	gtk_window_set_title(self->window, _("Rename book"));
 	gtk_window_set_resizable(self->window, false);
 	gtk_window_set_modal(self->window, true);
-	gtk_window_set_default_size(self->window, 670, 350);
-	gtk_widget_set_size_request(GTK_WIDGET(self->window), 670, 350);
 	g_signal_connect(self->window, "destroy", G_CALLBACK(signal_destroy), self);
 
 	// 콘텐츠 영역
@@ -353,9 +351,9 @@ static RenEx* renex_new(GtkWindow* parent, const char* filename)
 }
 
 // 이름 바꾸기 대화상자 비동기로 실행해보자
-void renex_show_async(GtkWindow* parent, const char* filename, RenameCallback callback, gpointer user_data)
+void renex_dialog_show_async(GtkWindow* parent, const char* filename, RenameCallback callback, gpointer user_data)
 {
-	RenEx* self = renex_new(parent, filename);
+	RenExDialog* self = renex_dialog_new(parent, filename);
 
 	self->callback = callback;
 	self->user_data = user_data;

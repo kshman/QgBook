@@ -68,6 +68,7 @@ typedef struct ShortcutDefinition
 // 이동 위치의 별명과 디렉토리
 typedef struct MoveLocation
 {
+	int no;				// 번호 (0부터 시작)
 	char* alias;			// 별명
 	char* folder;			// 디렉토리
 } MoveLocation;
@@ -94,18 +95,25 @@ extern void config_set_long(ConfigKeys name, gint64 value, bool cache_only);
 
 extern uint64_t config_get_actual_max_page_cache(void);
 
+
 // 최근 파일
 extern int recently_get_page(const char* filename);
 extern bool recently_set_page(const char* filename, int page);
 
+
 // 이동 위치
-extern MoveLocation* movloc_get_all(int* ret_count);
-extern bool movloc_set(const char* folder, const char* alias);
-extern bool movloc_delete(const char* folder);
-extern void movloc_free(MoveLocation* moves, int count);
+extern bool movloc_add(const char* alias, const char* folder);
+extern void movloc_edit(int no, const char* alias, const char* folder);
+extern void movloc_reindex(void);
+extern bool movloc_delete(int no);
+extern bool movloc_swap(int from, int to);
+extern GPtrArray* movloc_get_all_ptr(void);
+extern void movloc_commit(void);
+
 
 // 근처 파일
 extern bool nears_build(const char* dir, NearExtentionCompare compare);
+extern bool nears_build_if(const char* dir, NearExtentionCompare compare, const char* fullpath);
 extern const char* nears_get_prev(const char* fullpath);
 extern const char* nears_get_next(const char* fullpath);
 extern const char* nears_get_random(const char* fullpath);
@@ -116,6 +124,7 @@ extern const char* nears_get_for_rename(const char* fullpath, const char* new_fi
 // 단축키
 extern void shortcut_register(void);
 extern const char* shortcut_lookup(const guint key_val, const GdkModifierType key_state);
+
 
 // 언어
 extern const char* locale_lookup(const char* key);

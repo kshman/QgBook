@@ -134,14 +134,18 @@ static bool bz_delete(Book* book)
 
 	GFile* file = g_file_new_for_path(book->full_name);
 	const bool res = g_file_trash(file, NULL, NULL);
-	g_object_unref(file);
 
 	if (!res)
 	{
 		// 바로 지워보자
 		if (!g_file_delete(file, NULL, NULL))
+		{
+			g_object_unref(file);
 			return false;
+		}
 	}
+
+	g_object_unref(file);
 
 	return true;
 }

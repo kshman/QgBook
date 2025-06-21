@@ -587,7 +587,7 @@ GtkFileFilter* doumi_file_filter_zip(void)
 
 // GFile로 이 파일이 어떤건지 알아보기
 // 파일이 없어도 G_FILE_TYPE_UNKNOWN 반환
-GFileType doumi_get_file_type_from_gfile(GFile* file)
+GFileType doumi_get_file_type_from(GFile* file)
 {
 	g_return_val_if_fail(file != NULL, G_FILE_TYPE_UNKNOWN);
 	if (!g_file_query_exists(file, NULL))

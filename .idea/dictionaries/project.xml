@@ -5,6 +5,7 @@
       <w>gresource</w>
       <w>hicolor</w>
       <w>housebari</w>
+      <w>malgun</w>
       <w>mesg</w>
       <w>movloc</w>
       <w>pixbuf</w>
@@ -13,6 +14,7 @@
       <w>renex</w>
       <w>resg</w>
       <w>sourcedir</w>
+      <w>vmargin</w>
       <w>vmode</w>
       <w>vquality</w>
       <w>디렉토리</w>

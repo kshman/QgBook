@@ -63,6 +63,7 @@ target_include_directories(QgBook PRIVATE
 
 # 라이브러리 링크
 target_link_libraries(QgBook
+        m
         ${GTK4_LIBRARIES}
         ${GLIB_LIBRARIES}
         ${SQLITE3_LIBRARIES}

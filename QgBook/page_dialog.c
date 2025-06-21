@@ -56,7 +56,7 @@ typedef struct PageDialog
 	bool disposed;
 } PageDialog;
 
-static void reponse_selection(PageDialog* self, int selected)
+static void response_selection(PageDialog* self, int selected)
 {
 	if (self->disposed)
 		return; // 이미 dispose 되었으면 아무것도 안함
@@ -72,31 +72,31 @@ static gboolean on_window_close_request(GtkWindow* window, PageDialog* self)
 	if (self->disposed)
 		return false; // 이미 dispose 되었으면 닫기 요청 무시
 	// 창 닫기(X) 동작을 막고 싶으면 TRUE 반환
-	reponse_selection(self, -1);
+	response_selection(self, -1);
 	return true;
 }
 
 static void on_row_activated(GtkColumnView* view, guint position, PageDialog* self)
 {
-	reponse_selection(self, (int)position);
+	response_selection(self, (int)position);
 }
 
 static void on_ok_clicked(GtkButton* button, PageDialog* self)
 {
 	const guint pos = gtk_single_selection_get_selected(GTK_SINGLE_SELECTION(self->selection));
-	reponse_selection(self, (int)pos);
+	response_selection(self, (int)pos);
 }
 
 static void on_cancel_clicked(GtkButton* button, PageDialog* self)
 {
-	reponse_selection(self, -1);
+	response_selection(self, -1);
 }
 
 static gboolean on_key_press(GtkEventControllerKey* controller, guint keyval, guint keycode, GdkModifierType state, PageDialog* self)
 {
 	if (keyval == GDK_KEY_Escape)
 	{
-		reponse_selection(self, -1);
+		response_selection(self, -1);
 		return true;
 	}
 	return false;
@@ -106,6 +106,8 @@ static gboolean on_key_press(GtkEventControllerKey* controller, guint keyval, gu
 static void factory_setup_label(GtkListItemFactory* factory, GtkListItem* item, gpointer user_data)
 {
 	GtkWidget* label = gtk_label_new("");
+	gtk_widget_set_margin_start(label, 4); // 좌측 여백
+	gtk_widget_set_margin_end(label, 4);   // 우측 여백
 	gtk_list_item_set_child(item, label);
 }
 
@@ -137,7 +139,7 @@ static void factory_bind_date(GtkListItemFactory* factory, GtkListItem* item, gp
 #ifdef _MSC_VER
 	(void)localtime_s(&tm, &object->date);
 #else
-	localtime_r(&entry->date, &tm);
+	localtime_r(&object->date, &tm);
 #endif
 	char sz[64];
 	// 날짜와 시간: %Y-%m-%d %H:%M:%S
@@ -215,6 +217,7 @@ PageDialog* page_dialog_new(GtkWindow* parent, PageSelectCallback callback, gpoi
 	gtk_window_set_transient_for(GTK_WINDOW(self->window), parent);
 	gtk_window_set_title(self->window, _("Page selection"));
 	gtk_window_set_default_size(self->window, 480, 580);
+	gtk_widget_set_size_request(GTK_WIDGET(self->window), 400, 350);
 	g_signal_connect(self->window, "close-request", G_CALLBACK(on_window_close_request), self);
 
 	GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);

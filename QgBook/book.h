@@ -67,7 +67,7 @@ static inline gchar* book_rename(Book* book, const char* new_filename) { return 
 extern Book *book_zip_new(const char* zip_path);
 
 
-// 이름 바꾸기 구조체
+// 책 이름 바꾸기 구조체
 typedef struct RenameData
 {
 	bool result;			// 이름 바꾸기 성공 여부
@@ -75,8 +75,11 @@ typedef struct RenameData
 	char filename[2048];	// 새 파일 이름 (최대 1024자)
 } RenameData;
 
-// 이름 바꾸기 콜백
+// 책 이름 바꾸기 콜백
 typedef void (*RenameCallback)(gpointer sender, RenameData* data);
 
 // 쪽 선택 콜백
 typedef void (*PageSelectCallback)(gpointer sender, int page);
+
+// 책 이동 콜백
+typedef void (*MoveCallback)(gpointer sender, const char* directory);
