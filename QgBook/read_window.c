@@ -7,10 +7,17 @@
 
 // 앞서 선언
 typedef struct ReadWindow ReadWindow;
+typedef struct PageDialog PageDialog;
 typedef void (*ShortcutFunc)(ReadWindow*);
 
 // 외부 함수
 extern void renex_show_async(GtkWindow* parent, const char* filename, RenameCallback callback, gpointer user_data);
+
+extern PageDialog* page_dialog_new(GtkWindow* parent, PageSelectCallback callback, gpointer user_data);
+extern void page_dialog_dispose(PageDialog* self);
+extern void page_dialog_show_async(PageDialog* self, int page);
+extern void page_dialog_set_book(PageDialog* self, Book* book);
+extern void page_dialog_reset_book(PageDialog* self);
 
 #pragma region 스냅샷용 그리기 위젯
 // 그리기 위젯 정의
@@ -100,6 +107,7 @@ struct ReadWindow
 	Book* book;
 	GdkTexture* page_left;
 	GdkTexture* page_right;
+	PageDialog* page_dialog;
 };
 
 // 앞서 선언
@@ -307,6 +315,9 @@ static void close_book(ReadWindow* self)
 	gtk_label_set_text(GTK_LABEL(self->title_label), _("[No Book]"));
 	gtk_widget_set_sensitive(self->menu_file_close, false);
 
+	if (self->page_dialog)
+		page_dialog_reset_book(self->page_dialog);
+
 	queue_draw_book(self);
 }
 
@@ -360,7 +371,8 @@ static void open_book(ReadWindow* self, GFile* file)
 
 	prepare_page(self);
 
-	// TODO: 여기서 쪽 선택 다이얼로그를 준비한다
+	if (self->page_dialog)
+		page_dialog_set_book(self->page_dialog, book);
 }
 
 // 책 열기 대화상자 콜백
@@ -413,7 +425,8 @@ static void open_book_dialog(ReadWindow* self)
 // 쪽 준비
 static void prepare_page(ReadWindow* self)
 {
-	g_return_if_fail(self->book != NULL);
+	if (self->book == NULL)
+		return; // 책이 없으면 그냥 나감
 
 	if (self->page_left)
 		g_object_unref(self->page_left);
@@ -473,7 +486,8 @@ static void prepare_page(ReadWindow* self)
 // 쪽 조정
 static void page_control(ReadWindow* self, BookControl c)
 {
-	g_return_if_fail(self->book != NULL);
+	if (self->book == NULL)
+		return;
 
 	switch (c)  // NOLINT(clang-diagnostic-switch-enum)
 	{
@@ -557,7 +571,7 @@ static void page_control(ReadWindow* self, BookControl c)
 		}
 
 		case BOOK_CTRL_SELECT:
-			notify(self, 0, _("Page selection"));
+			page_dialog_show_async(self->page_dialog, self->book->cur_page);
 			break;
 
 		default:
@@ -566,6 +580,21 @@ static void page_control(ReadWindow* self, BookControl c)
 
 	prepare_page(self);
 	queue_draw_book(self);
+}
+
+// 쪽 선택 콜백
+void cb_page_dialog(gpointer sender, int page)
+{
+	if (page < 0)
+		return; // 페이지가 잘못됐거나 취소됨
+
+	ReadWindow* self = sender;
+	if (book_move_page(self->book, page))
+	{
+		// 페이지 이동 성공
+		prepare_page(self);
+		queue_draw_book(self);
+	}
 }
 #pragma endregion
 
@@ -588,24 +617,10 @@ static void signal_destroy(GtkWidget* widget, ReadWindow* self)
 	g_free(self);
 }
 
-#ifdef _WIN32
-// 맵 콜백
-static void signal_map(GtkWidget* widget, ReadWindow* self)
-{
-	GdkSurface* surface = gtk_native_get_surface(GTK_NATIVE(widget));
-	if (GDK_IS_WIN32_SURFACE(surface))
-	{
-		self->hwnd = gdk_win32_surface_get_handle(surface);
-		const int x = config_get_int(CONFIG_WINDOW_X, true);
-		const int y = config_get_int(CONFIG_WINDOW_Y, true);
-		if (self->hwnd && x >= 0 && y >= 0)
-			SetWindowPos(self->hwnd, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-	}
-}
-
 // 윈도우 닫히기 전에 콜백
 static gboolean signal_close_request(GtkWidget* widget, ReadWindow* self)
 {
+#ifdef _WIN32
 	// 좌표 저장
 	GtkWindow* window = GTK_WINDOW(widget);
 	if (self->hwnd && !gtk_window_is_maximized(window) && !gtk_window_is_fullscreen(window))
@@ -617,9 +632,28 @@ static gboolean signal_close_request(GtkWidget* widget, ReadWindow* self)
 			config_set_int(CONFIG_WINDOW_Y, rc.top, false);
 		}
 	}
+#endif
+	if (self->page_dialog)
+		page_dialog_dispose(self->page_dialog);
 	return false;
 }
+
+// 맵 콜백
+static void signal_map(GtkWidget* widget, ReadWindow* self)
+{
+#ifdef _WIN32
+	GdkSurface* surface = gtk_native_get_surface(GTK_NATIVE(widget));
+	if (GDK_IS_WIN32_SURFACE(surface))
+	{
+		self->hwnd = gdk_win32_surface_get_handle(surface);
+		const int x = config_get_int(CONFIG_WINDOW_X, true);
+		const int y = config_get_int(CONFIG_WINDOW_Y, true);
+		if (self->hwnd && x >= 0 && y >= 0)
+			SetWindowPos(self->hwnd, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+	}
 #endif
+	self->page_dialog = page_dialog_new(GTK_WINDOW(self->window), cb_page_dialog, self);
+}
 
 // 윈도우 각종 알림 콜백
 static void signal_notify(GObject* object, GParamSpec* pspec, ReadWindow* self)
@@ -1108,6 +1142,7 @@ static void shortcut_page_plus(ReadWindow* self)
 // 단축키 - 쪽 선택
 static void shortcut_page_select(ReadWindow* self)
 {
+	reset_key(self);	// 다이얼로그가 키를 먹어버리므로 키 입력 초기화
 	page_control(self, BOOK_CTRL_SELECT);
 }
 
@@ -1390,9 +1425,9 @@ ReadWindow* read_window_new(GtkApplication* app)
 	gtk_widget_set_size_request(GTK_WIDGET(self->window), 600, 400);
 	g_signal_connect(self->window, "destroy", G_CALLBACK(signal_destroy), self);
 	g_signal_connect(self->window, "notify", G_CALLBACK(signal_notify), self);
+	g_signal_connect(self->window, "close-request", G_CALLBACK(signal_close_request), self);
 #ifdef _WIN32
 	g_signal_connect(self->window, "map", G_CALLBACK(signal_map), self);
-	g_signal_connect(self->window, "close-request", G_CALLBACK(signal_close_request), self);
 #endif
 
 	// 팡고 글꼴

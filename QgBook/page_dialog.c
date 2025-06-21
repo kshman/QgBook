@@ -1,55 +1,109 @@
 ﻿#include "pch.h"
 #include "configs.h"
 #include "book.h"
+#include "doumi.h"
+
+// 쪽 선택용 쪽 정보
+#define TYPE_PAGE_OBJECT (page_object_get_type())
+G_DECLARE_FINAL_TYPE(PageObject, page_object, , PAGE_OBJECT, GObject)
+
+typedef struct _PageObject
+{
+	GObject parent_instance;
+	int no; // 페이지 번호 (0부터 시작)
+	gchar* name; // 파일 이름
+	time_t date; // 파일 수정 날짜
+	int64_t size; // 파일 크기
+} PageObject;
+
+G_DEFINE_TYPE(PageObject, page_object, G_TYPE_OBJECT)
+
+static void page_object_finalize(GObject* object)
+{
+	PageObject* self = (PageObject*)object;
+	g_free(self->name);
+	G_OBJECT_CLASS(page_object_parent_class)->finalize(object);
+}
+
+static void page_object_class_init(PageObjectClass* klass)
+{
+	GObjectClass* object_class = G_OBJECT_CLASS(klass);
+	object_class->finalize = page_object_finalize;
+}
+
+static void page_object_init(PageObject* self)
+{
+	self->name = NULL;
+	self->date = 0;
+	self->size = 0;
+}
+
 
 // 쪽 선택 다이얼로그
 typedef struct PageDialog
 {
-	GtkWindow window; // 상속
+	GtkWindow* window; // 상속
 
 	GtkWidget* page_info;      // 페이지 정보 레이블
 	GtkWidget* page_list;      // GtkColumnView
 	GListStore* list_store;    // GListStore<PageEntry>
 	GtkSelectionModel* selection; // GtkSingleSelection
 
+	PageSelectCallback callback; // 선택 콜백
+	gpointer user_data; // 콜백 사용자 데이터
+
 	int selected;
-	bool result;
+	bool disposed;
 } PageDialog;
+
+static void reponse_selection(PageDialog* self, int selected)
+{
+	if (self->disposed)
+		return; // 이미 dispose 되었으면 아무것도 안함
+	self->selected = selected;
+	gtk_widget_set_visible(GTK_WIDGET(self->window), false);
+	if (self->callback == NULL)
+		return; // 콜백이 없으면 아무것도 안함
+	self->callback(self->user_data, selected);
+}
+
+static gboolean on_window_close_request(GtkWindow* window, PageDialog* self)
+{
+	if (self->disposed)
+		return false; // 이미 dispose 되었으면 닫기 요청 무시
+	// 창 닫기(X) 동작을 막고 싶으면 TRUE 반환
+	reponse_selection(self, -1);
+	return true;
+}
 
 static void on_row_activated(GtkColumnView* view, guint position, PageDialog* self)
 {
-	self->result = true;
-	self->selected = (int)position;
-	gtk_widget_set_visible(GTK_WIDGET(self), false);
+	reponse_selection(self, (int)position);
 }
 
 static void on_ok_clicked(GtkButton* button, PageDialog* self)
 {
-	self->result = true;
 	const guint pos = gtk_single_selection_get_selected(GTK_SINGLE_SELECTION(self->selection));
-	self->selected = (int)pos;
-	gtk_widget_set_visible(GTK_WIDGET(self), false);
+	reponse_selection(self, (int)pos);
 }
 
 static void on_cancel_clicked(GtkButton* button, PageDialog* self)
 {
-	self->result = false;
-	gtk_widget_set_visible(GTK_WIDGET(self), false);
+	reponse_selection(self, -1);
 }
 
 static gboolean on_key_press(GtkEventControllerKey* controller, guint keyval, guint keycode, GdkModifierType state, PageDialog* self)
 {
 	if (keyval == GDK_KEY_Escape)
 	{
-		self->result = false;
-		gtk_widget_set_visible(GTK_WIDGET(self), false);
+		reponse_selection(self, -1);
 		return true;
 	}
 	return false;
 }
 
 // 셀 팩토리: 각 컬럼별 텍스트 반환
-static void factory_setup_name(GtkListItemFactory* factory, GtkListItem* item, gpointer user_data)
+static void factory_setup_label(GtkListItemFactory* factory, GtkListItem* item, gpointer user_data)
 {
 	GtkWidget* label = gtk_label_new("");
 	gtk_list_item_set_child(item, label);
@@ -58,86 +112,164 @@ static void factory_setup_name(GtkListItemFactory* factory, GtkListItem* item, g
 static void factory_bind_name(GtkListItemFactory* factory, GtkListItem* item, gpointer user_data)
 {
 	GtkWidget* label = gtk_list_item_get_child(item);
-	PageEntry* entry = gtk_list_item_get_item(item);
-	gtk_label_set_text(GTK_LABEL(label), entry->name ? entry->name : "<unknown>");
+	PageObject* object = gtk_list_item_get_item(item);
+	gtk_label_set_text(GTK_LABEL(label), object->name ? object->name : _("<unknown>"));
+	gtk_widget_set_halign(label, GTK_ALIGN_START);
 }
 
-static void factory_setup_date(GtkListItemFactory* factory, GtkListItem* item, gpointer user_data)
+static void factory_bind_no(GtkListItemFactory* factory, GtkListItem* item, gpointer user_data)
 {
-	GtkWidget* label = gtk_label_new("");
-	gtk_list_item_set_child(item, label);
+	GtkWidget* label = gtk_list_item_get_child(item);
+	PageObject* object = gtk_list_item_get_item(item);
+
+	char sz[64];
+	g_snprintf(sz, sizeof(sz), "%d", object->no + 1); // 페이지 번호는 1부터 시작
+	gtk_label_set_text(GTK_LABEL(label), sz);
+	gtk_widget_set_halign(label, GTK_ALIGN_END);
 }
 
 static void factory_bind_date(GtkListItemFactory* factory, GtkListItem* item, gpointer user_data)
 {
 	GtkWidget* label = gtk_list_item_get_child(item);
-	PageEntry* entry = gtk_list_item_get_item(item);
-	gtk_label_set_text(GTK_LABEL(label), entry->date ? entry->date : "");
-}
+	PageObject* object = gtk_list_item_get_item(item);
 
-static void factory_setup_size(GtkListItemFactory* factory, GtkListItem* item, gpointer user_data)
-{
-	GtkWidget* label = gtk_label_new("");
-	gtk_list_item_set_child(item, label);
+	struct tm tm;
+#ifdef _MSC_VER
+	(void)localtime_s(&tm, &object->date);
+#else
+	localtime_r(&entry->date, &tm);
+#endif
+	char sz[64];
+	// 날짜와 시간: %Y-%m-%d %H:%M:%S
+	(void)strftime(sz, sizeof(sz), "%Y-%m-%d", &tm);
+	gtk_label_set_text(GTK_LABEL(label), sz);
+	gtk_widget_set_halign(label, GTK_ALIGN_END);
 }
 
 static void factory_bind_size(GtkListItemFactory* factory, GtkListItem* item, gpointer user_data)
 {
 	GtkWidget* label = gtk_list_item_get_child(item);
-	PageEntry* entry = gtk_list_item_get_item(item);
-	gtk_label_set_text(GTK_LABEL(label), entry->size ? entry->size : "");
+	PageObject* object = gtk_list_item_get_item(item);
+
+	char sz[64];
+	doumi_format_size_friendly(object->size, sz, sizeof(sz));
+	gtk_label_set_text(GTK_LABEL(label), sz);
+	gtk_widget_set_halign(label, GTK_ALIGN_END);
 }
 
-static void page_dialog_init(PageDialog* dlg)
+// 책 정보 설정
+void page_dialog_set_book(PageDialog* self, Book* book)
 {
-	gtk_window_set_title(GTK_WINDOW(dlg), "페이지 선택");
-	gtk_window_set_default_size(GTK_WINDOW(dlg), 434, 511);
-	gtk_window_set_resizable(GTK_WINDOW(dlg), false);
+	char info[64];
+	g_snprintf(info, sizeof(info), _("Total page: %d"), book->total_page);
+	gtk_label_set_text(GTK_LABEL(self->page_info), info);
+
+	g_list_store_remove_all(self->list_store);
+
+	const GPtrArray* entries = book->entries;
+	for (guint i = 0; i < entries->len; ++i)
+	{
+		PageEntry* e = g_ptr_array_index(entries, i);
+		PageObject* o = g_object_new(TYPE_PAGE_OBJECT, NULL);
+		o->no = e->page;
+		o->name = g_strdup(e->name);
+		o->date = e->date;
+		o->size = e->size;
+		g_list_store_append(self->list_store, o);
+		g_object_unref(o); // GListStore가 참조를 가지므로 여기서 해제
+	}
+}
+
+// 책 정보 리셋
+void page_dialog_reset_book(PageDialog* self)
+{
+	gtk_label_set_text(GTK_LABEL(self->page_info), _("[No Book]"));
+	g_list_store_remove_all(self->list_store);
+}
+
+// 선택 갱신
+static void page_dialog_refresh_selection(PageDialog* self)
+{
+	const guint count = g_list_model_get_n_items(G_LIST_MODEL(self->list_store));
+	const guint page = self->selected < 0 ? 0 : (self->selected >= (int)count ? count - 1 : self->selected);
+	gtk_single_selection_set_selected(GTK_SINGLE_SELECTION(self->selection), page);
+	gtk_column_view_scroll_to(
+		GTK_COLUMN_VIEW(self->page_list),
+		page,                   // 이동할 행 인덱스
+		NULL,                   // 전체 행 기준
+		GTK_LIST_SCROLL_FOCUS | GTK_LIST_SCROLL_SELECT, // 포커스+선택
+		NULL                    // 기본 동작
+	);
+	gtk_widget_grab_focus(self->page_list);
+}
+
+// 쪽 다이얼로그 만들기ㅣ
+PageDialog* page_dialog_new(GtkWindow* parent, PageSelectCallback callback, gpointer user_data)
+{
+	PageDialog* self = g_new0(PageDialog, 1);
+
+	self->callback = callback;
+	self->user_data = user_data;
+
+	self->window = GTK_WINDOW(gtk_window_new());
+	gtk_window_set_transient_for(GTK_WINDOW(self->window), parent);
+	gtk_window_set_title(self->window, _("Page selection"));
+	gtk_window_set_default_size(self->window, 480, 580);
+	g_signal_connect(self->window, "close-request", G_CALLBACK(on_window_close_request), self);
 
 	GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-	gtk_window_set_child(GTK_WINDOW(dlg), vbox);
+	gtk_window_set_child(self->window, vbox);
 
 	// 상단 정보 라벨
-	dlg->page_info = gtk_label_new("페이지");
-	gtk_widget_set_halign(dlg->page_info, GTK_ALIGN_START);
-	gtk_widget_set_margin_top(dlg->page_info, 8);
-	gtk_widget_set_margin_start(dlg->page_info, 8);
-	gtk_widget_set_margin_end(dlg->page_info, 8);
-	gtk_box_append(GTK_BOX(vbox), dlg->page_info);
+	self->page_info = gtk_label_new("");
+	gtk_widget_set_halign(self->page_info, GTK_ALIGN_START);
+	gtk_widget_set_margin_top(self->page_info, 8);
+	gtk_widget_set_margin_start(self->page_info, 8);
+	gtk_widget_set_margin_end(self->page_info, 8);
+	gtk_box_append(GTK_BOX(vbox), self->page_info);
 
-	// GListStore<PageEntry>
-	dlg->list_store = g_list_store_new(G_TYPE_POINTER);
-
-	// SingleSelection
-	dlg->selection = gtk_single_selection_new(G_LIST_MODEL(dlg->list_store));
+	// 리스트와 선택 모델
+	self->list_store = g_list_store_new(TYPE_PAGE_OBJECT);
+	self->selection = GTK_SELECTION_MODEL(gtk_single_selection_new(G_LIST_MODEL(self->list_store)));
 
 	// 컬럼뷰 및 팩토리
+	GtkListItemFactory* factory_no = gtk_signal_list_item_factory_new();
+	g_signal_connect(factory_no, "setup", G_CALLBACK(factory_setup_label), NULL);
+	g_signal_connect(factory_no, "bind", G_CALLBACK(factory_bind_no), NULL);
+
 	GtkListItemFactory* factory_name = gtk_signal_list_item_factory_new();
-	g_signal_connect(factory_name, "setup", G_CALLBACK(factory_setup_name), NULL);
+	g_signal_connect(factory_name, "setup", G_CALLBACK(factory_setup_label), NULL);
 	g_signal_connect(factory_name, "bind", G_CALLBACK(factory_bind_name), NULL);
 
 	GtkListItemFactory* factory_date = gtk_signal_list_item_factory_new();
-	g_signal_connect(factory_date, "setup", G_CALLBACK(factory_setup_date), NULL);
+	g_signal_connect(factory_date, "setup", G_CALLBACK(factory_setup_label), NULL);
 	g_signal_connect(factory_date, "bind", G_CALLBACK(factory_bind_date), NULL);
 
 	GtkListItemFactory* factory_size = gtk_signal_list_item_factory_new();
-	g_signal_connect(factory_size, "setup", G_CALLBACK(factory_setup_size), NULL);
+	g_signal_connect(factory_size, "setup", G_CALLBACK(factory_setup_label), NULL);
 	g_signal_connect(factory_size, "bind", G_CALLBACK(factory_bind_size), NULL);
 
-	GtkColumnViewColumn* col_name = gtk_column_view_column_new("파일 이름", factory_name);
-	GtkColumnViewColumn* col_date = gtk_column_view_column_new("날짜", factory_date);
-	GtkColumnViewColumn* col_size = gtk_column_view_column_new("크기", factory_size);
+	GtkColumnViewColumn* col_no = gtk_column_view_column_new(_("No."), factory_no);
+	GtkColumnViewColumn* col_name = gtk_column_view_column_new(_("Filename"), factory_name);
+	GtkColumnViewColumn* col_date = gtk_column_view_column_new(_("Date"), factory_date);
+	GtkColumnViewColumn* col_size = gtk_column_view_column_new(_("Size"), factory_size);
 
-	dlg->page_list = gtk_column_view_new(dlg->selection);
-	gtk_column_view_append_column(GTK_COLUMN_VIEW(dlg->page_list), col_name);
-	gtk_column_view_append_column(GTK_COLUMN_VIEW(dlg->page_list), col_date);
-	gtk_column_view_append_column(GTK_COLUMN_VIEW(dlg->page_list), col_size);
+	gtk_column_view_column_set_expand(col_no, FALSE);
+	gtk_column_view_column_set_expand(col_name, TRUE);
+	gtk_column_view_column_set_expand(col_date, FALSE);
+	gtk_column_view_column_set_expand(col_size, FALSE);
+
+	self->page_list = gtk_column_view_new(self->selection);
+	gtk_column_view_append_column(GTK_COLUMN_VIEW(self->page_list), col_no);
+	gtk_column_view_append_column(GTK_COLUMN_VIEW(self->page_list), col_name);
+	gtk_column_view_append_column(GTK_COLUMN_VIEW(self->page_list), col_date);
+	gtk_column_view_append_column(GTK_COLUMN_VIEW(self->page_list), col_size);
+	g_signal_connect(self->page_list, "activate", G_CALLBACK(on_row_activated), self);
 
 	GtkWidget* scrolled = gtk_scrolled_window_new();
-	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), dlg->page_list);
-	gtk_widget_set_size_request(scrolled, 400, 350);
-	gtk_widget_set_margin_start(scrolled, 8);
-	gtk_widget_set_margin_end(scrolled, 8);
+	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), self->page_list);
+	gtk_widget_set_hexpand(scrolled, TRUE);   // 가로로 확장
+	gtk_widget_set_vexpand(scrolled, TRUE);   // 세로로 확장
 	gtk_box_append(GTK_BOX(vbox), scrolled);
 
 	// 버튼 박스
@@ -146,90 +278,52 @@ static void page_dialog_init(PageDialog* dlg)
 	gtk_widget_set_margin_start(button_box, 8);
 	gtk_widget_set_margin_end(button_box, 8);
 
-	GtkWidget* cancel_btn = gtk_button_new_with_label("취소");
-	GtkWidget* ok_btn = gtk_button_new_with_label("이동");
+	GtkWidget* cancel_btn = gtk_button_new_with_label(_("Cancel"));
+	g_signal_connect(cancel_btn, "clicked", G_CALLBACK(on_cancel_clicked), self);
+
+	GtkWidget* ok_btn = gtk_button_new_with_label(_("Go to page"));
+	g_signal_connect(ok_btn, "clicked", G_CALLBACK(on_ok_clicked), self);
+
+#ifdef _WIN32
+	gtk_box_append(GTK_BOX(button_box), ok_btn);
+	gtk_box_append(GTK_BOX(button_box), cancel_btn);
+#else
 	gtk_box_append(GTK_BOX(button_box), cancel_btn);
 	gtk_box_append(GTK_BOX(button_box), ok_btn);
+#endif
+
+	gtk_widget_set_halign(button_box, GTK_ALIGN_CENTER);
+	gtk_widget_set_hexpand(button_box, FALSE); // 가로 확장 안함
+	gtk_widget_set_vexpand(button_box, FALSE); // 세로 확장 안함
 	gtk_box_append(GTK_BOX(vbox), button_box);
 
-	// 이벤트 연결
-	g_signal_connect(dlg->page_list, "activate", G_CALLBACK(on_row_activated), dlg);
-	g_signal_connect(ok_btn, "clicked", G_CALLBACK(on_ok_clicked), dlg);
-	g_signal_connect(cancel_btn, "clicked", G_CALLBACK(on_cancel_clicked), dlg);
-
+	// 컨트롤러
 	GtkEventController* key_controller = gtk_event_controller_key_new();
-	g_signal_connect(key_controller, "key-pressed", G_CALLBACK(on_key_press), dlg);
-	gtk_widget_add_controller(GTK_WIDGET(dlg), key_controller);
+	g_signal_connect(key_controller, "key-pressed", G_CALLBACK(on_key_press), self);
+	gtk_widget_add_controller(GTK_WIDGET(self->window), key_controller);
+
+	//
+	return self;
 }
 
-// 책 정보 설정
-void page_dialog_set_book(PageDialog* dlg, Book* book)
+// 다이얼로그 지우기
+void page_dialog_dispose(PageDialog* self)
 {
-	char info[64];
-	snprintf(info, sizeof(info), "총 페이지: %d", book_total_page(book));
-	gtk_label_set_text(GTK_LABEL(dlg->page_info), info);
-
-	// 기존 데이터 해제
-	guint n_items = g_list_model_get_n_items(G_LIST_MODEL(dlg->list_store));
-	for (guint i = 0; i < n_items; ++i)
+	if (self->window)
 	{
-		PageEntry* entry = g_list_model_get_item(G_LIST_MODEL(dlg->list_store), i);
-		page_entry_free(entry);
+		self->disposed = true; // 다이얼로그가 dispose 되었음을 표시
+		g_signal_handlers_disconnect_by_data(self->window, self);
+		gtk_window_close(self->window);
 	}
-	g_list_store_remove_all(dlg->list_store);
-
-	int n = 0;
-	BookEntryInfo* entries = book_get_entries_info(book);
-	int count = book_entry_count(book);
-	for (int i = 0; i < count; ++i)
-	{
-		PageEntry* entry = g_new0(PageEntry, 1);
-		entry->name = g_strdup(entries[i].name ? entries[i].name : "<알 수 없음>");
-		entry->date = g_strdup(entries[i].date_str);
-		entry->size = g_strdup(entries[i].size_str);
-		entry->index = n++;
-		g_list_store_append(dlg->list_store, entry);
-	}
-}
-
-// 책 정보 리셋
-void page_dialog_reset_book(PageDialog* dlg)
-{
-	gtk_label_set_text(GTK_LABEL(dlg->page_info), "열린 책 없음");
-	guint n_items = g_list_model_get_n_items(G_LIST_MODEL(dlg->list_store));
-	for (guint i = 0; i < n_items; ++i)
-	{
-		PageEntry* entry = g_list_model_get_item(G_LIST_MODEL(dlg->list_store), i);
-		page_entry_free(entry);
-	}
-	g_list_store_remove_all(dlg->list_store);
-}
-
-// 선택 갱신
-static void page_dialog_refresh_selection(PageDialog* dlg)
-{
-	guint count = g_list_model_get_n_items(G_LIST_MODEL(dlg->list_store));
-	guint page = dlg->selected < 0 ? 0 : (dlg->selected >= (int)count ? count - 1 : dlg->selected);
-	gtk_single_selection_set_selected(GTK_SINGLE_SELECTION(dlg->selection), page);
-	gtk_widget_grab_focus(dlg->page_list);
+	g_free(self);
 }
 
 // 다이얼로그 실행
-gboolean page_dialog_run(PageDialog* dlg, GtkWindow* parent, int page)
+void page_dialog_show_async(PageDialog* self, int page)
 {
-	if (parent)
-		gtk_window_set_transient_for(GTK_WINDOW(dlg), parent);
+	self->selected = page;
+	page_dialog_refresh_selection(self);
 
-	dlg->selected = page;
-	page_dialog_refresh_selection(dlg);
-
-	gtk_window_set_modal(GTK_WINDOW(dlg), true);
-	gtk_window_present(GTK_WINDOW(dlg));
-
-	// 메시지 루프: 창이 닫힐 때까지 대기
-	while (gtk_widget_get_visible(GTK_WIDGET(dlg)))
-	{
-		while (g_main_context_iteration(NULL, false));
-	}
-	return dlg->result;
+	gtk_window_set_modal(GTK_WINDOW(self->window), true);
+	gtk_window_present(GTK_WINDOW(self->window));
 }

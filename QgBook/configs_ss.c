@@ -32,7 +32,7 @@ ShortcutDefinition shortcut_defs[] =
 	{ "page_10_next", "BackSpace" },
 	{ "page_minus", "Up" },
 	{ "page_plus", "Down" },
-	{ "page_select", "Enter" },
+	{ "page_select", "Return" },
 	{ "scan_book_prev", "bracketleft" },
 	{ "scan_book_next", "bracketright" },
 	{ "scan_book_random", "backslash" },

@@ -77,3 +77,6 @@ typedef struct RenameData
 
 // 이름 바꾸기 콜백
 typedef void (*RenameCallback)(gpointer sender, RenameData* data);
+
+// 쪽 선택 콜백
+typedef void (*PageSelectCallback)(gpointer sender, int page);
