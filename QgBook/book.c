@@ -3,7 +3,17 @@
 #include "book.h"
 #include "doumi.h"
 
-// 페이지 정보 제거
+/**
+ * @file book.c
+ * @brief Book(책) 객체의 기본 동작(초기화, 해제, 페이지 이동 등)을 구현한 파일입니다.
+ *        다양한 형식의 책(예: ZIP, 폴더 등)에서 공통적으로 사용하는 함수들을 제공합니다.
+ */
+
+/**
+ * @brief 페이지 엔트리(PageEntry) 메모리 해제 함수
+ *        GPtrArray의 free_func로 사용됩니다.
+ * @param ptr PageEntry 포인터
+ */
 static void page_entry_free(gpointer ptr)
 {
 	PageEntry* entry = ptr;
@@ -12,7 +22,12 @@ static void page_entry_free(gpointer ptr)
 	g_free(entry);
 }
 
-// 책 초기화
+/**
+ * @brief Book 객체의 기본 정보를 초기화합니다.
+ *        파일 경로, 파일명, 디렉토리명, 페이지 엔트리 배열을 생성합니다.
+ * @param book Book 객체 포인터
+ * @param filename 책 파일의 전체 경로
+ */
 void book_base_init(Book* book, const char* filename)
 {
 	book->entries = g_ptr_array_new_with_free_func(page_entry_free);
@@ -22,7 +37,11 @@ void book_base_init(Book* book, const char* filename)
 	book->dir_name = g_path_get_dirname(filename);
 }
 
-// 책 해제
+/**
+ * @brief Book 객체의 리소스를 해제합니다.
+ *        엔트리 배열, 파일명, 디렉토리명 등 동적 할당된 메모리를 모두 해제합니다.
+ * @param book Book 객체 포인터
+ */
 void book_base_dispose(Book* book)
 {
 	if (book->entries)
@@ -36,7 +55,13 @@ void book_base_dispose(Book* book)
 	g_free(book);
 }
 
-// 페이지 읽기
+/**
+ * @brief 지정한 페이지의 이미지를 읽어 GdkTexture로 반환합니다.
+ *        페이지 데이터가 없거나 읽기 실패 시 기본 'no image' 이미지를 반환합니다.
+ * @param book Book 객체 포인터
+ * @param page 읽을 페이지 번호
+ * @return GdkTexture 포인터(성공 시), 실패 시 기본 이미지
+ */
 GdkTexture* book_read_page(Book* book, int page)
 {
 	if (page < 0 || page >= (int)book->entries->len)
@@ -59,7 +84,7 @@ GdkTexture* book_read_page(Book* book, int page)
 		goto pos_return_no_image;
 	}
 
-	// 원래 여기서 캐시에 넣어야 됨
+	// TODO: 페이지 캐시 기능이 필요하다면 이곳에 구현
 
 	return texture;
 
@@ -69,11 +94,16 @@ pos_return_no_image:
 	return GDK_TEXTURE(g_object_ref(no_image));
 }
 
-// 다음 페이지로 이동
+/**
+ * @brief 다음 페이지(또는 쌍페이지)로 이동합니다.
+ * @param book Book 객체 포인터
+ * @param mode 페이지 넘김 모드(ViewMode)
+ * @return 실제로 페이지가 바뀌었으면 true, 아니면 false
+ */
 bool book_move_next(Book* book, ViewMode mode)
 {
 	int prev = book->cur_page;
-	switch (mode)
+	switch (mode)  // NOLINT(clang-diagnostic-switch-enum)
 	{
 		case VIEW_MODE_FIT:
 			if (book->cur_page + 1 < book->total_page)
@@ -85,17 +115,22 @@ bool book_move_next(Book* book, ViewMode mode)
 				book->cur_page += 2;
 			break;
 		default:
-			// 주겨버려
+			// 잘못된 모드: 프로그램 비정상 종료
 			abort();
 	}
 	return prev != book->cur_page; // 페이지가 바뀌었으면 true 반환
 }
 
-// 이전 페이지로 이동
+/**
+ * @brief 이전 페이지(또는 쌍페이지)로 이동합니다.
+ * @param book Book 객체 포인터
+ * @param mode 페이지 넘김 모드(ViewMode)
+ * @return 실제로 페이지가 바뀌었으면 true, 아니면 false
+ */
 bool book_move_prev(Book* book, ViewMode mode)
 {
 	int prev = book->cur_page;
-	switch (mode)
+	switch (mode)  // NOLINT(clang-diagnostic-switch-enum)
 	{
 		case VIEW_MODE_FIT:
 			book->cur_page--;
@@ -105,7 +140,7 @@ bool book_move_prev(Book* book, ViewMode mode)
 			book->cur_page -= 2;
 			break;
 		default:
-			// 주겨버려
+			// 잘못된 모드: 프로그램 비정상 종료
 			abort();
 	}
 	if (book->cur_page < 0)
@@ -113,7 +148,13 @@ bool book_move_prev(Book* book, ViewMode mode)
 	return prev != book->cur_page; // 페이지가 바뀌었으면 true 반환
 }
 
-// 지정한 페이지로 이동
+/**
+ * @brief 지정한 페이지로 이동합니다.
+ *        범위를 벗어나면 0 또는 마지막 페이지로 이동합니다.
+ * @param book Book 객체 포인터
+ * @param page 이동할 페이지 번호
+ * @return 실제로 페이지가 바뀌었으면 true, 아니면 false
+ */
 bool book_move_page(Book* book, int page)
 {
 	int prev = book->cur_page;
@@ -122,10 +163,22 @@ bool book_move_page(Book* book, int page)
 	return prev != book->cur_page;
 }
 
-// 엔트리 얻기
+/**
+ * @brief 지정한 페이지의 PageEntry 정보를 반환합니다.
+ * @param book Book 객체 포인터
+ * @param page 페이지 번호
+ * @return PageEntry 포인터(존재하지 않으면 NULL)
+ */
 const PageEntry* book_get_entry(Book* book, int page)
 {
 	if (page < 0 || page >= (int)book->entries->len)
 		return NULL;
 	return g_ptr_array_index(book->entries, page);
 }
+
+/**
+ * @note
+ * - Book 구조체는 다양한 형식의 책(ZIP, 폴더 등)에 공통적으로 사용됩니다.
+ * - 페이지 이동, 엔트리 관리 등 기본 동작을 이 파일에서 구현합니다.
+ * - 페이지 캐시 기능은 현재 미구현 상태입니다.
+ */

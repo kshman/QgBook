@@ -3,47 +3,63 @@
 #include "configs.h"
 #include "doumi.h"
 
+/**
+ * @file configs.c
+ * @brief 프로그램의 전역 설정, 캐시, 단축키, 최근 파일, 이동 위치, 언어 등
+ *        다양한 환경설정 및 관련 데이터베이스 연동을 담당하는 구현 파일입니다.
+ */
+
+// 외부 변수 선언
 extern ConfigDefinition config_defs[CONFIG_MAX_VALUE];
 extern ShortcutDefinition shortcut_defs[];
 
-// 설정 자료
+/**
+ * @brief 전역 설정 자료 구조체
+ *        실행 시간, 경로, 언어, 단축키, 캐시, 이동 위치, 근처 파일 등 관리
+ */
 static struct Configs
 {
-	time_t launched;
+	time_t launched;           ///< 프로그램 실행 시각
 
-	char* app_path;
-	char* cfg_path;
+	char* app_path;            ///< 설정 파일 저장 경로
+	char* cfg_path;            ///< 설정 파일 전체 경로
 
-	GHashTable* lang;
-	GHashTable* shortcut;
-	GHashTable* cache;
-	GPtrArray* moves;
+	GHashTable* lang;          ///< 언어 문자열 해시
+	GHashTable* shortcut;      ///< 단축키 해시
+	GHashTable* cache;         ///< 설정 캐시 해시
+	GPtrArray* moves;          ///< 책 이동 위치 배열
 
-	GPtrArray* nears;
-	NearExtentionCompare near_compare;
-	char* near_dir;
+	GPtrArray* nears;          ///< 근처 파일 배열
+	NearExtentionCompare near_compare; ///< 근처 파일 비교 함수
+	char* near_dir;            ///< 근처 파일 디렉토리
 } cfgs =
 {
 	.app_path = NULL,
 	.cfg_path = NULL,
 };
 
-// 설정 캐시 아이템
+/**
+ * @brief 설정 캐시 아이템 구조체
+ *        다양한 타입의 값을 저장할 수 있도록 union 사용
+ */
 typedef struct ConfigCacheItem
 {
 	union
 	{
-		gint32 n; // 정수형
-		gint64 l; // 긴 정수형
-		bool b; // 불린형
-		double d; // 실수형
-		char* s; // 문자열
+		gint32 n;   ///< 정수형
+		gint64 l;   ///< 긴 정수형
+		bool b;     ///< 불린형
+		double d;   ///< 실수형
+		char* s;    ///< 문자열
 	};
 
-	CacheType type; // 타입
+	CacheType type; ///< 값의 타입
 } ConfigCacheItem;
 
-// 캐시 아이템 해제
+/**
+ * @brief 캐시 아이템 메모리 해제 함수
+ * @param ptr ConfigCacheItem 포인터
+ */
 static void cache_item_free(gpointer ptr)
 {
 	ConfigCacheItem* item = ptr;
@@ -53,17 +69,22 @@ static void cache_item_free(gpointer ptr)
 	g_free(item);
 }
 
-// 캐시 얻기
-// key에 대한 범위 검사를 하지 않습니다.
+/**
+ * @brief 캐시에서 아이템을 얻어옵니다.
+ * @param key 설정 키
+ * @return ConfigCacheItem 포인터(없으면 NULL)
+ */
 static ConfigCacheItem *cache_get_item(const ConfigKeys key)
 {
 	const struct ConfigDefinition* def = &config_defs[key];
 	return g_hash_table_lookup(cfgs.cache, def->name);
 }
 
-// 캐시 설정
-// key에 대한 범위 검사를 하지 않습니다.
-// 인수인 item은 할당된게 아니므로 여기서 할당하고 복제합니다.
+/**
+ * @brief 캐시에 아이템을 복제하여 저장합니다.
+ * @param key 설정 키
+ * @param item 저장할 값
+ */
 static void cache_set_item(const ConfigKeys key, const ConfigCacheItem* item)
 {
 	ConfigCacheItem* new_item = g_new(ConfigCacheItem, 1);
@@ -73,7 +94,13 @@ static void cache_set_item(const ConfigKeys key, const ConfigCacheItem* item)
 	g_hash_table_insert(cfgs.cache, g_strdup(def->name), new_item);
 }
 
-// 타입을 자동으로 알아내서 캐시 얻기
+/**
+ * @brief 타입에 따라 캐시에서 값을 문자열로 얻어옵니다.
+ * @param key 설정 키
+ * @param value 결과 버퍼
+ * @param value_size 버퍼 크기
+ * @return 문자열 포인터(문자열 타입이면 내부 포인터, 아니면 value)
+ */
 static const char *cache_auto_get_item(const ConfigKeys key, char* value, const size_t value_size)
 {
 	const struct ConfigDefinition* def = &config_defs[key];
@@ -103,7 +130,11 @@ static const char *cache_auto_get_item(const ConfigKeys key, char* value, const 
 	return value;
 }
 
-// 타입을 자동으로 알아내서 캐시 설정
+/**
+ * @brief 타입에 따라 문자열 값을 캐시에 저장합니다.
+ * @param key 설정 키
+ * @param value 저장할 문자열 값
+ */
 static void cache_auto_set_item(const ConfigKeys key, const char* value)
 {
 	const struct ConfigDefinition* def = &config_defs[key];
@@ -135,7 +166,11 @@ static void cache_auto_set_item(const ConfigKeys key, const char* value)
 	g_hash_table_insert(cfgs.cache, g_strdup(def->name), item);
 }
 
-// SQL 오류 메시지를 얻어서 출력하고 디비를 닫습니다.
+/**
+ * @brief SQL 오류 메시지 출력 및 DB 닫기
+ * @param db sqlite3 포인터
+ * @param close_db true면 DB도 닫음
+ */
 static void sql_error(sqlite3* db, bool close_db)
 {
 	g_return_if_fail(db != NULL);
@@ -146,7 +181,10 @@ static void sql_error(sqlite3* db, bool close_db)
 		sqlite3_close(db);
 }
 
-// SQL 오류 메시지를 출력하고 메모리 해제
+/**
+ * @brief SQL 오류 메시지 출력 및 메모리 해제
+ * @param err_msg 오류 메시지
+ */
 static void sql_free_error(char* err_msg)
 {
 	if (err_msg)
@@ -156,7 +194,10 @@ static void sql_free_error(char* err_msg)
 	}
 }
 
-// SQL을 엽니다
+/**
+ * @brief 설정 DB를 엽니다.
+ * @return sqlite3 포인터(실패 시 NULL)
+ */
 static sqlite3 *sql_open(void)
 {
 	sqlite3* db;
@@ -167,7 +208,12 @@ static sqlite3 *sql_open(void)
 	return NULL;
 }
 
-// SQL 문구 실행
+/**
+ * @brief SQL 문장을 실행합니다.
+ * @param db sqlite3 포인터
+ * @param sql 실행할 SQL
+ * @return 성공 시 true
+ */
 static bool sql_exec_stmt(sqlite3* db, const char* sql)
 {
 	char* err_msg = NULL;
@@ -179,7 +225,13 @@ static bool sql_exec_stmt(sqlite3* db, const char* sql)
 	return true;
 }
 
-// SQL Configs 테이블에서 Select해서 캐시로 넣기. 캐시에 값이 없으면 기본값 넣음
+/**
+ * @brief DB에서 설정 값을 읽어 캐시에 저장합니다.
+ *        값이 없으면 기본값을 캐시에 저장합니다.
+ * @param db sqlite3 포인터
+ * @param key 설정 키
+ * @return 성공 시 true
+ */
 static bool sql_select_config(sqlite3* db, const ConfigKeys key)
 {
 	const struct ConfigDefinition* def = &config_defs[key];
@@ -202,7 +254,13 @@ static bool sql_select_config(sqlite3* db, const ConfigKeys key)
 	return true;
 }
 
-// SQL Configs 테이블로 Insert or Replace하는데 값을 지정
+/**
+ * @brief DB에 설정 값을 저장합니다.
+ * @param db sqlite3 포인터
+ * @param key 설정 키
+ * @param value 저장할 값
+ * @return 성공 시 true
+ */
 static bool sql_into_config_value(sqlite3* db, const ConfigKeys key, const char* value)
 {
 	const struct ConfigDefinition* def = &config_defs[key];
@@ -229,7 +287,12 @@ static bool sql_into_config_value(sqlite3* db, const ConfigKeys key, const char*
 	return ret;
 }
 
-// SQL Configs 테이블로 캐시에서 값을 가져와 Insert or Replace
+/**
+ * @brief 캐시에서 값을 가져와 DB에 저장합니다.
+ * @param db sqlite3 포인터
+ * @param key 설정 키
+ * @return 성공 시 true
+ */
 static bool sql_into_config(sqlite3* db, const ConfigKeys key)
 {
 	char sz[128];
@@ -237,7 +300,11 @@ static bool sql_into_config(sqlite3* db, const ConfigKeys key)
 	return sql_into_config_value(db, key, psz ? psz : config_defs[key].value);
 }
 
-// SQL Configs 테이블에서 가져와 캐시에 넣기
+/**
+ * @brief DB에서 값을 읽어 캐시에 저장합니다.
+ * @param key 설정 키
+ * @return 성공 시 true
+ */
 static bool sql_get_config(const ConfigKeys key)
 {
 	sqlite3* db = sql_open();
@@ -249,7 +316,11 @@ static bool sql_get_config(const ConfigKeys key)
 	return ret;
 }
 
-// SQL Configs 테이블에 캐시에 있는 값 넣기
+/**
+ * @brief 캐시에서 값을 DB에 저장합니다.
+ * @param key 설정 키
+ * @return 성공 시 true
+ */
 static bool sql_set_config(const ConfigKeys key)
 {
 	sqlite3* db = sql_open();
@@ -261,7 +332,10 @@ static bool sql_set_config(const ConfigKeys key)
 	return ret;
 }
 
-// move 삭제
+/**
+ * @brief 책 이동 위치 메모리 해제 함수
+ * @param ptr MoveLocation 포인터
+ */
 static void move_loc_free(gpointer ptr)
 {
 	MoveLocation* p = ptr;
@@ -270,7 +344,11 @@ static void move_loc_free(gpointer ptr)
 	g_free(p);
 }
 
-// 언어 처리 데이터 분석
+/**
+ * @brief 언어 파일 데이터를 해시 테이블로 파싱합니다.
+ * @param lht 해시 테이블
+ * @param data 언어 파일 데이터
+ */
 static void parse_language_hash_table_data(GHashTable* lht, const char* data)
 {
 	g_return_if_fail(lht != NULL && data != NULL);
@@ -335,7 +413,10 @@ static void parse_language_hash_table_data(GHashTable* lht, const char* data)
 	}
 }
 
-// 설정을 초기화합니다.
+/**
+ * @brief 설정을 초기화합니다. (경로, 언어, 캐시, DB, 이동 위치 등)
+ * @return 성공 시 true
+ */
 bool config_init(void)
 {
 	// 실행 시간 초기화
@@ -416,7 +497,9 @@ bool config_init(void)
 	return true;
 }
 
-// 설정을 정리힙니다.
+/**
+ * @brief 설정을 정리(해제)합니다.
+ */
 void config_dispose(void)
 {
 	sqlite3* db = sql_open();
@@ -453,7 +536,9 @@ void config_dispose(void)
 		g_free(cfgs.app_path);
 }
 
-// 설정에서 쓸 값을 캐시합니다.
+/**
+ * @brief 설정에서 쓸 값을 캐시로 불러옵니다.
+ */
 void config_load_cache(void)
 {
 	sqlite3* db = sql_open();
@@ -506,7 +591,12 @@ void config_load_cache(void)
 	sqlite3_close(db);
 }
 
-// 설정에서 아이템을 가져옵니다
+/**
+ * @brief 설정에서 캐시 아이템을 가져옵니다.
+ * @param key 설정 키
+ * @param cache_only true면 캐시만, false면 DB도 조회
+ * @return ConfigCacheItem 포인터
+ */
 static const ConfigCacheItem *config_get_item(ConfigKeys key, bool cache_only)
 {
 	if (key <= CONFIG_NONE || key >= CONFIG_MAX_VALUE)
@@ -516,14 +606,26 @@ static const ConfigCacheItem *config_get_item(ConfigKeys key, bool cache_only)
 	return cache_get_item(key);
 }
 
-// 설정에서 문자열을 가져오는데, 포인터로 반환합니다.
+/**
+ * @brief 설정에서 문자열 값을 포인터로 가져옵니다.
+ * @param name 설정 키
+ * @param cache_only true면 캐시만, false면 DB도 조회
+ * @return 문자열 포인터(없으면 NULL)
+ */
 const char *config_get_string_ptr(ConfigKeys name, bool cache_only)
 {
 	const ConfigCacheItem* item = config_get_item(name, cache_only);
 	return item == NULL || item->type != CACHE_TYPE_STRING ? NULL : item->s;
 }
 
-// 설정에서 문자열을 가져옵니다.
+/**
+ * @brief 설정에서 문자열 값을 복사해 가져옵니다.
+ * @param name 설정 키
+ * @param value 결과 버퍼
+ * @param value_size 버퍼 크기
+ * @param cache_only true면 캐시만, false면 DB도 조회
+ * @return 성공 시 true
+ */
 bool config_get_string(ConfigKeys name, char* value, size_t value_size, bool cache_only)
 {
 	const char* str = config_get_string_ptr(name, cache_only);
@@ -533,28 +635,48 @@ bool config_get_string(ConfigKeys name, char* value, size_t value_size, bool cac
 	return true;
 }
 
-// 설정에서 불린을 가져옵니다.
+/**
+ * @brief 설정에서 불린 값을 가져옵니다.
+ * @param name 설정 키
+ * @param cache_only true면 캐시만, false면 DB도 조회
+ * @return 불린 값
+ */
 bool config_get_bool(ConfigKeys name, bool cache_only)
 {
 	const ConfigCacheItem* item = config_get_item(name, cache_only);
 	return item != NULL && item->type == CACHE_TYPE_BOOL ? item->b : false;
 }
 
-// 설정에서 정수를 가져옵니다.
+/**
+ * @brief 설정에서 정수 값을 가져옵니다.
+ * @param name 설정 키
+ * @param cache_only true면 캐시만, false면 DB도 조회
+ * @return 정수 값
+ */
 gint32 config_get_int(ConfigKeys name, bool cache_only)
 {
 	const ConfigCacheItem* item = config_get_item(name, cache_only);
 	return item != NULL && item->type == CACHE_TYPE_INT ? item->n : 0;
 }
 
-// 설정에서 긴 정수를 가져옵니다.
+/**
+ * @brief 설정에서 긴 정수 값을 가져옵니다.
+ * @param name 설정 키
+ * @param cache_only true면 캐시만, false면 DB도 조회
+ * @return 긴 정수 값
+ */
 gint64 config_get_long(ConfigKeys name, bool cache_only)
 {
 	const ConfigCacheItem* item = config_get_item(name, cache_only);
 	return item != NULL && item->type == CACHE_TYPE_LONG ? item->l : 0;
 }
 
-// 설정으로 문자열을 넣습니다
+/**
+ * @brief 설정에 문자열 값을 저장합니다.
+ * @param name 설정 키
+ * @param value 저장할 문자열
+ * @param cache_only true면 캐시만, false면 DB에도 저장
+ */
 void config_set_string(ConfigKeys name, const char* value, bool cache_only)
 {
 	g_return_if_fail(name > CONFIG_NONE && name < CONFIG_MAX_VALUE);
@@ -563,7 +685,12 @@ void config_set_string(ConfigKeys name, const char* value, bool cache_only)
 		sql_set_config(name);
 }
 
-// 설정으로 불린을 넣습니다.
+/**
+ * @brief 설정에 불린 값을 저장합니다.
+ * @param name 설정 키
+ * @param value 저장할 불린 값
+ * @param cache_only true면 캐시만, false면 DB에도 저장
+ */
 void config_set_bool(ConfigKeys name, bool value, bool cache_only)
 {
 	g_return_if_fail(name > CONFIG_NONE && name < CONFIG_MAX_VALUE);
@@ -573,7 +700,12 @@ void config_set_bool(ConfigKeys name, bool value, bool cache_only)
 		sql_set_config(name);
 }
 
-// 설정으로 정수를 넣습니다.
+/**
+ * @brief 설정에 정수 값을 저장합니다.
+ * @param name 설정 키
+ * @param value 저장할 정수 값
+ * @param cache_only true면 캐시만, false면 DB에도 저장
+ */
 void config_set_int(ConfigKeys name, gint32 value, bool cache_only)
 {
 	g_return_if_fail(name > CONFIG_NONE && name < CONFIG_MAX_VALUE);
@@ -583,7 +715,12 @@ void config_set_int(ConfigKeys name, gint32 value, bool cache_only)
 		sql_set_config(name);
 }
 
-// 설정으로 긴 정수를 넣습니다.
+/**
+ * @brief 설정에 긴 정수 값을 저장합니다.
+ * @param name 설정 키
+ * @param value 저장할 긴 정수 값
+ * @param cache_only true면 캐시만, false면 DB에도 저장
+ */
 void config_set_long(ConfigKeys name, gint64 value, bool cache_only)
 {
 	g_return_if_fail(name > CONFIG_NONE && name < CONFIG_MAX_VALUE);
@@ -593,7 +730,10 @@ void config_set_long(ConfigKeys name, gint64 value, bool cache_only)
 		sql_set_config(name);
 }
 
-// 실제 최대 캐시 크기를 얻습니다.
+/**
+ * @brief 실제 최대 페이지 캐시 크기를 바이트 단위로 반환합니다.
+ * @return 최대 캐시 크기(바이트)
+ */
 uint64_t config_get_actual_max_page_cache(void)
 {
 	const ConfigCacheItem* item = cache_get_item(CONFIG_GENERAL_MAX_PAGE_CACHE);
@@ -601,7 +741,11 @@ uint64_t config_get_actual_max_page_cache(void)
 	return (uint64_t)mb * 1024ULL * 1024ULL; // MB 단위로 변환
 }
 
-// 파일 이름에 해당하는 최근 페이지 번호를 얻습니다.
+/**
+ * @brief 파일 이름에 해당하는 최근 페이지 번호를 얻습니다.
+ * @param filename 파일 이름
+ * @return 페이지 번호(없으면 0)
+ */
 int recently_get_page(const char* filename)
 {
 	g_return_val_if_fail(filename != NULL, 0);
@@ -625,8 +769,13 @@ int recently_get_page(const char* filename)
 	return page;
 }
 
-// 파일 이름에 해당하는 최근 페이지 번호를 설정합니다.
-// page가 0 이하이면 삭제합니다. 1 이상이면 페이지 번호로 설정합니다.
+/**
+ * @brief 파일 이름에 해당하는 최근 페이지 번호를 설정합니다.
+ *        page가 0 이하이면 삭제, 1 이상이면 저장
+ * @param filename 파일 이름
+ * @param page 페이지 번호
+ * @return 성공 시 true
+ */
 bool recently_set_page(const char* filename, int page)
 {
 	g_return_val_if_fail(filename != NULL, false);
@@ -671,7 +820,12 @@ bool recently_set_page(const char* filename, int page)
 	return ret;
 }
 
-// 책 이동 위치를 추가합니다.
+/**
+ * @brief 책 이동 위치를 추가합니다.
+ * @param alias 별칭
+ * @param folder 폴더 경로
+ * @return 성공 시 true
+ */
 bool movloc_add(const char* alias, const char* folder)
 {
 	if (alias == NULL || folder == NULL)
@@ -698,7 +852,12 @@ bool movloc_add(const char* alias, const char* folder)
 	return true;
 }
 
-// 책 이동 위치를 고칩니다.
+/**
+ * @brief 책 이동 위치를 수정합니다.
+ * @param no 이동 위치 인덱스
+ * @param alias 새 별칭
+ * @param folder 새 폴더 경로
+ */
 void movloc_edit(int no, const char* alias, const char* folder)
 {
 	if (alias == NULL || folder == NULL)
@@ -713,7 +872,9 @@ void movloc_edit(int no, const char* alias, const char* folder)
 	p->folder = g_strdup(folder);
 }
 
-// 책 이동 위치 순번을 다시 설정합니다.
+/**
+ * @brief 책 이동 위치의 순번을 다시 설정합니다.
+ */
 void movloc_reindex(void)
 {
 	for (guint i = 0; i < cfgs.moves->len; i++)
@@ -723,7 +884,11 @@ void movloc_reindex(void)
 	}
 }
 
-// 책 이동 위치를 삭제합니다.
+/**
+ * @brief 책 이동 위치를 삭제합니다.
+ * @param no 이동 위치 인덱스
+ * @return 성공 시 true
+ */
 bool movloc_delete(int no)
 {
 	if (no < 0 || no >= (int)cfgs.moves->len)
@@ -735,7 +900,12 @@ bool movloc_delete(int no)
 	return true;
 }
 
-// 책 이동 위치의 순번을 바꿉니다.
+/**
+ * @brief 책 이동 위치의 순서를 바꿉니다.
+ * @param from 원래 인덱스
+ * @param to 바꿀 인덱스
+ * @return 성공 시 true
+ */
 bool movloc_swap(int from, int to)
 {
 	if (from < 0 || from >= (int)cfgs.moves->len || to < 0 || to >= (int)cfgs.moves->len || from == to)
@@ -752,13 +922,18 @@ bool movloc_swap(int from, int to)
 	return true;
 }
 
-// 책 이동 위치를 모두 가져옵니다.
+/**
+ * @brief 책 이동 위치 배열을 반환합니다.
+ * @return GPtrArray 포인터
+ */
 GPtrArray *movloc_get_all_ptr(void)
 {
 	return cfgs.moves;
 }
 
-// 책 이동 위치를 DB에 저장합니다.
+/**
+ * @brief 책 이동 위치를 DB에 저장(커밋)합니다.
+ */
 void movloc_commit(void)
 {
 	sqlite3* db = sql_open();
@@ -798,8 +973,12 @@ void movloc_commit(void)
 	sqlite3_close(db);
 }
 
-
-// 자연스러운 문자열 비교
+/**
+ * @brief 자연스러운 문자열 비교 함수(숫자/문자 구분, OS별 처리)
+ * @param pa 문자열 포인터 a
+ * @param pb 문자열 포인터 b
+ * @return 비교 결과(-1, 0, 1)
+ */
 static gint compare_natural_filename(const void* pa, const void* pb)
 {
 	const char* a = *(const char**)pa; // NOLINT(clang-diagnostic-cast-qual)
@@ -884,7 +1063,12 @@ static gint compare_natural_filename(const void* pa, const void* pb)
 #endif
 }
 
-// 근처 파일을 추가합니다.
+/**
+ * @brief 근처 파일 목록을 빌드합니다.
+ * @param dir 디렉토리 경로
+ * @param compare 확장자 비교 함수
+ * @return 성공 시 true
+ */
 bool nears_build(const char* dir, NearExtentionCompare compare)
 {
 	if (dir == NULL || compare == NULL)
@@ -923,7 +1107,13 @@ bool nears_build(const char* dir, NearExtentionCompare compare)
 	return true;
 }
 
-// 지정한 파일이 없으면 근처 파일을 만듭니다
+/**
+ * @brief 지정한 파일이 없으면 근처 파일을 빌드합니다.
+ * @param dir 디렉토리 경로
+ * @param compare 확장자 비교 함수
+ * @param fullpath 확인할 파일 경로
+ * @return 성공 시 true
+ */
 bool nears_build_if(const char* dir, NearExtentionCompare compare, const char* fullpath)
 {
 	if (fullpath && *fullpath != '\0')
@@ -940,7 +1130,11 @@ bool nears_build_if(const char* dir, NearExtentionCompare compare, const char* f
 	return nears_build(dir, compare);
 }
 
-// 지정 파일의 앞쪽 근처 파일을 얻습니다.
+/**
+ * @brief 지정 파일의 앞쪽 근처 파일을 얻습니다.
+ * @param fullpath 기준 파일 경로
+ * @return 이전 파일 경로(없으면 NULL)
+ */
 const char *nears_get_prev(const char* fullpath)
 {
 	g_return_val_if_fail(fullpath != NULL, NULL);
@@ -956,7 +1150,11 @@ const char *nears_get_prev(const char* fullpath)
 	return NULL;
 }
 
-// 지정 파일의 뒤쪽 근처 파일을 얻습니다.
+/**
+ * @brief 지정 파일의 뒤쪽 근처 파일을 얻습니다.
+ * @param fullpath 기준 파일 경로
+ * @return 다음 파일 경로(없으면 NULL)
+ */
 const char *nears_get_next(const char* fullpath)
 {
 	g_return_val_if_fail(fullpath != NULL, NULL);
@@ -972,7 +1170,11 @@ const char *nears_get_next(const char* fullpath)
 	return NULL;
 }
 
-// 지정 파일을 빼고 임의의 파일을 얻습니다.
+/**
+ * @brief 지정 파일을 제외한 임의의 근처 파일을 얻습니다.
+ * @param fullpath 기준 파일 경로
+ * @return 임의의 파일 경로(없으면 NULL)
+ */
 const char *nears_get_random(const char* fullpath)
 {
 	g_return_val_if_fail(fullpath != NULL, NULL);
@@ -988,7 +1190,11 @@ const char *nears_get_random(const char* fullpath)
 	}
 }
 
-// 지정 파일을 삭제하고 근처 파일을 얻습니다
+/**
+ * @brief 지정 파일을 삭제하고 근처 파일을 얻습니다.
+ * @param fullpath 기준 파일 경로
+ * @return 남은 파일 경로(없으면 NULL)
+ */
 const char *nears_get_for_remove(const char* fullpath)
 {
 	g_return_val_if_fail(fullpath != NULL, NULL);
@@ -1015,7 +1221,12 @@ const char *nears_get_for_remove(const char* fullpath)
 	return NULL;
 }
 
-// 지정 파일을 삭제하고 새로운 항목을 추가하면서, 근처 파일을 얻습니다.
+/**
+ * @brief 지정 파일을 삭제하고 새 항목을 추가하며 근처 파일을 얻습니다.
+ * @param fullpath 기준 파일 경로
+ * @param new_filename 새 파일 이름
+ * @return 남은 파일 경로(없으면 NULL)
+ */
 const char *nears_get_for_rename(const char* fullpath, const char* new_filename)
 {
 	g_return_val_if_fail(fullpath != NULL && new_filename != NULL, NULL);
@@ -1042,8 +1253,11 @@ const char *nears_get_for_rename(const char* fullpath, const char* new_filename)
 	return dup_filename;
 }
 
-
-// 문자열에서 modifier 파싱
+/**
+ * @brief 문자열에서 modifier(Shift, Ctrl 등) 파싱
+ * @param name modifier 이름
+ * @return GdkModifierType 값
+ */
 static GdkModifierType parse_modifier(const char* name)
 {
 	if (g_ascii_strcasecmp(name, "Shift") == 0)
@@ -1061,7 +1275,11 @@ static GdkModifierType parse_modifier(const char* name)
 	return 0;
 }
 
-// 단축키 만들기
+/**
+ * @brief 단축키 문자열을 내부 값으로 변환
+ * @param alias 단축키 문자열
+ * @return 변환된 값(gint64 포인터, 실패 시 NULL)
+ */
 static gint64 *convert_shortcut(const char* alias)
 {
 	if (!alias || !*alias)
@@ -1111,7 +1329,9 @@ static gint64 *convert_shortcut(const char* alias)
 	return result;
 }
 
-// 단축키 얻어오기
+/**
+ * @brief 단축키를 등록합니다. (기본값 및 DB에서 읽기)
+ */
 void shortcut_register(void)
 {
 	// 먼저 기본값을 넣자고
@@ -1162,7 +1382,12 @@ void shortcut_register(void)
 	sqlite3_close(db);
 }
 
-// 키 입력값으로 단축키 명령 얻기
+/**
+ * @brief 키 입력값으로 단축키 명령을 조회합니다.
+ * @param key_val 키 값
+ * @param key_state modifier 상태
+ * @return 단축키 명령 문자열(없으면 NULL)
+ */
 const char *shortcut_lookup(const guint key_val, const GdkModifierType key_state)
 {
 	const gint64 key = ((gint64)key_state << 32) | key_val; // 상위 32비트에 상태, 하위 32비트에 키값
@@ -1170,9 +1395,21 @@ const char *shortcut_lookup(const guint key_val, const GdkModifierType key_state
 	return action;
 }
 
-// 언어 찾아보기
+/**
+ * @brief 언어 문자열을 조회합니다.
+ * @param key 언어 키
+ * @return 번역 문자열(없으면 key 자체 반환)
+ */
 const char *locale_lookup(const char* key)
 {
 	const char* lookup = g_hash_table_lookup(cfgs.lang, key);
 	return lookup ? lookup : key;
 }
+
+/**
+ * @note
+ * - 이 파일은 프로그램의 환경설정, 캐시, 단축키, 최근 파일, 이동 위치, 언어 등
+ *   다양한 설정 및 데이터베이스 연동을 담당합니다.
+ * - 각 함수는 메모리 관리, DB 연동, 캐시 동기화에 주의해야 합니다.
+ * - 구조체, 함수, 주요 블록에 Doxygen 스타일 주석을 추가하였습니다.
+ */

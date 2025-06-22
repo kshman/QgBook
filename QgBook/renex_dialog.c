@@ -2,29 +2,41 @@
 #include "configs.h"
 #include "book.h"
 
-// 확장 파일 이름 바꾸기 대화상자
+/**
+ * @file renex_dialog.c
+ * @brief 책 파일 이름 바꾸기(확장 이름 포함) 대화상자 구현 파일입니다.
+ *        파일명 분석, 입력 필드 관리, 콜백 처리 등 대화상자 동작을 담당합니다.
+ */
+
+/**
+ * @brief 확장 파일 이름 바꾸기 대화상자 구조체
+ *        각종 입력 위젯, 파일명 정보, 콜백, 상태 플래그를 포함합니다.
+ */
 typedef struct RenExDialog
 {
-	GtkWindow* window;	// 상속
+	GtkWindow* window;	///< 대화상자 윈도우 (상속)
 
-	GtkWidget* name;	// 만들어진 파일 이름
-	GtkWidget* author;	// 작가
-	GtkWidget* title;	// 책 제목
-	GtkWidget* index;	// 순번
-	GtkWidget* extra;	// 추가 정보
+	GtkWidget* name;	///< 만들어진 파일 이름 표시 라벨
+	GtkWidget* author;	///< 작가 입력 필드
+	GtkWidget* title;	///< 책 제목 입력 필드
+	GtkWidget* index;	///< 순번 입력 필드
+	GtkWidget* extra;	///< 추가 정보 입력 필드
 
-	char extension[64];
-	char filename[2048];
+	char extension[64];	///< 파일 확장자 (.zip 등)
+	char filename[2048];///< 최종 생성된 파일명
 
-	RenameCallback callback;
-	gpointer user_data;
+	RenameCallback callback; ///< 이름 바꾸기 완료 시 호출될 콜백
+	gpointer user_data;      ///< 콜백에 전달할 사용자 데이터
 
-	bool initialized;	// 파일 이름이 초기화 되었는지 여부
-	bool reopen;		// 다시 열기 플래그
-	bool result;		// 결과 (성공 여부)
+	bool initialized;	///< 파일 이름이 초기화 되었는지 여부
+	bool reopen;		///< 다시 열기 플래그
+	bool result;		///< 결과(성공 여부)
 } RenExDialog;
 
-// 파일 이름 만들기
+/**
+ * @brief 입력 필드 값으로부터 파일 이름을 생성하여 name 라벨에 표시합니다.
+ * @param self RenExDialog 포인터
+ */
 static void make_file_name(RenExDialog* self)
 {
 	if (!self->initialized)
@@ -53,10 +65,14 @@ static void make_file_name(RenExDialog* self)
 	gtk_label_set_text(GTK_LABEL(self->name), self->filename);
 }
 
-// 파일 이름 분석
+/**
+ * @brief 파일 이름을 분석하여 각 입력 필드에 값을 분리하여 설정합니다.
+ * @param self RenExDialog 포인터
+ * @param filename 분석할 파일명
+ */
 static void parse_file_name(RenExDialog* self, const char* filename)
 {
-	// 아래 걍 무시되는 경우가 있으니 미리 초기화
+	// 필드 초기화
 	gtk_label_set_text(GTK_LABEL(self->name), "");
 	gtk_editable_set_text(GTK_EDITABLE(self->author), "");
 	gtk_editable_set_text(GTK_EDITABLE(self->title), "");
@@ -80,7 +96,7 @@ static void parse_file_name(RenExDialog* self, const char* filename)
 		g_strlcpy(ws, filename, sizeof(ws));
 	}
 
-	// 작가
+	// 작가 추출
 	const char* n = strchr(ws, '[');
 	if (n)
 	{
@@ -96,7 +112,7 @@ static void parse_file_name(RenExDialog* self, const char* filename)
 		}
 	}
 
-	// 추가 정보
+	// 추가 정보 추출
 	n = strrchr(ws, '(');
 	if (n)
 	{
@@ -112,7 +128,7 @@ static void parse_file_name(RenExDialog* self, const char* filename)
 		}
 	}
 
-	// 순번
+	// 순번 추출
 	n = strrchr(ws, ' ');
 	if (n)
 	{
@@ -125,33 +141,45 @@ static void parse_file_name(RenExDialog* self, const char* filename)
 		}
 	}
 
-	// 책이름
+	// 책 제목 추출
 	g_strstrip(ws);
 	gtk_editable_set_text(GTK_EDITABLE(self->title), ws);
 
-	// 원래 이름
+	// 원래 이름 표시
 	gtk_label_set_text(GTK_LABEL(self->name), filename);
 	g_strlcpy(self->filename, filename, sizeof(self->filename));
 
-	// 초기화 했어요
+	// 초기화 완료
 	self->initialized = true;
 }
 
-// 취소 콜백
+/**
+ * @brief 취소 버튼 클릭 시 호출되는 콜백
+ * @param widget 클릭된 위젯
+ * @param self RenExDialog 포인터
+ */
 static void cancel_callback(GtkWidget* widget, RenExDialog* self)
 {
 	self->result = false; // 취소됨
 	gtk_window_close(self->window);
 }
 
-// OK 콜백
+/**
+ * @brief OK 버튼 클릭 시 호출되는 콜백
+ * @param widget 클릭된 위젯
+ * @param self RenExDialog 포인터
+ */
 static void ok_callback(GtkWidget* widget, RenExDialog* self)
 {
 	self->result = true;
 	gtk_window_close(self->window);
 }
 
-// 다시 열기 콜백
+/**
+ * @brief 다시 열기 버튼 클릭 시 호출되는 콜백
+ * @param widget 클릭된 위젯
+ * @param self RenExDialog 포인터
+ */
 static void reopen_callback(GtkWidget* widget, RenExDialog* self)
 {
 	self->result = true;
@@ -159,7 +187,15 @@ static void reopen_callback(GtkWidget* widget, RenExDialog* self)
 	gtk_window_close(self->window);
 }
 
-// 엔트리 키 눌림
+/**
+ * @brief 엔트리에서 키 입력 시 호출되는 콜백 (ESC 처리)
+ * @param controller 키 이벤트 컨트롤러
+ * @param keyval 입력된 키 값
+ * @param keycode 키 코드
+ * @param state modifier 상태
+ * @param self RenExDialog 포인터
+ * @return true면 이벤트 중단, false면 기본 동작
+ */
 static gboolean entry_key_pressed(
 	GtkEventControllerKey* controller,
 	guint keyval,
@@ -178,39 +214,39 @@ static gboolean entry_key_pressed(
 	return false; // 기본 동작 계속
 }
 
-// 엔트리 값이 바뀔 때마다 호출되는 콜백
+/**
+ * @brief 엔트리 값이 바뀔 때마다 호출되는 콜백
+ * @param editable 변경된 GtkEditable
+ * @param self RenExDialog 포인터
+ */
 static void entry_changed(GtkEditable* editable, RenExDialog* self)
 {
-	//const char* text = gtk_editable_get_text(editable);
 	make_file_name(self);
 }
 
-// 엔트리 활성화 시 호출되는 콜백
+/**
+ * @brief 엔트리 활성화(Enter) 시 호출되는 콜백
+ *        입력 순서에 따라 다음 필드로 포커스 이동 또는 OK 처리
+ * @param entry 활성화된 GtkEntry
+ * @param self RenExDialog 포인터
+ */
 static void entry_activate(GtkEntry* entry, RenExDialog* self)
 {
 	if (entry == GTK_ENTRY(self->title))
-	{
-		// 제목 입력창에서 엔터키를 누르면 다음 입력창으로 포커스를 이동
 		gtk_entry_grab_focus_without_selecting(GTK_ENTRY(self->author));
-	}
 	else if (entry == GTK_ENTRY(self->author))
-	{
-		// 작가 입력창에서 엔터키를 누르면 순번 입력창으로 포커스를 이동
 		gtk_entry_grab_focus_without_selecting(GTK_ENTRY(self->index));
-	}
 	else if (entry == GTK_ENTRY(self->index))
-	{
-		// 순번 입력창에서 엔터키를 누르면 추가 정보 입력창으로 포커스를 이동
 		gtk_entry_grab_focus_without_selecting(GTK_ENTRY(self->extra));
-	}
 	else if (entry == GTK_ENTRY(self->extra))
-	{
-		// 추가 정보 입력창에서 엔터키를 누르면 다이얼로그를 닫고 OK 콜백 호출
 		ok_callback(NULL, self);
-	}
 }
 
-// 입력 상자 만들기
+/**
+ * @brief 입력 상자(GtkEntry) 생성 및 이벤트 연결
+ * @param self RenExDialog 포인터
+ * @return 생성된 GtkWidget 포인터
+ */
 static GtkWidget* create_entry(RenExDialog* self)
 {
 	GtkWidget* entry = gtk_entry_new();
@@ -226,7 +262,12 @@ static GtkWidget* create_entry(RenExDialog* self)
 	return entry;
 }
 
-// 정렬된 라벨 만들기
+/**
+ * @brief 정렬된 라벨(GtkLabel) 생성
+ * @param text 라벨에 표시할 텍스트
+ * @param align 정렬 방식(GtkAlign)
+ * @return 생성된 GtkWidget 포인터
+ */
 static GtkWidget* create_label(const char* text, GtkAlign align)
 {
 	GtkWidget* label = gtk_label_new(text);
@@ -235,7 +276,12 @@ static GtkWidget* create_label(const char* text, GtkAlign align)
 	return label;
 }
 
-// 윈도우 종료되고 나서 콜백
+/**
+ * @brief 윈도우 종료 시 호출되는 콜백
+ *        성공적으로 이름이 바뀐 경우에만 콜백을 호출합니다.
+ * @param widget 종료된 위젯
+ * @param self RenExDialog 포인터
+ */
 static void signal_destroy(GtkWidget* widget, RenExDialog* self)
 {
 	if (self->callback && self->result)
@@ -247,7 +293,12 @@ static void signal_destroy(GtkWidget* widget, RenExDialog* self)
 	g_free(self);
 }
 
-// 만들기
+/**
+ * @brief RenExDialog 객체를 생성하고 UI를 구성합니다.
+ * @param parent 부모 윈도우
+ * @param filename 원본 파일명
+ * @return 생성된 RenExDialog 포인터
+ */
 static RenExDialog* renex_dialog_new(GtkWindow* parent, const char* filename)
 {
 	RenExDialog* self = g_new0(RenExDialog, 1);
@@ -271,27 +322,27 @@ static RenExDialog* renex_dialog_new(GtkWindow* parent, const char* filename)
 	gtk_widget_set_margin_top(grid, 16);
 	gtk_widget_set_margin_bottom(grid, 16);
 
-	// 1열
+	// 1열: 원본 파일명
 	gtk_grid_attach(GTK_GRID(grid), create_label(_("Original filename"), GTK_ALIGN_END), 0, 1, 1, 1);
 	gtk_grid_attach(GTK_GRID(grid), create_label(filename, GTK_ALIGN_START), 1, 1, 3, 1);
-	// 2열
+	// 2열: 변경될 파일명
 	gtk_grid_attach(GTK_GRID(grid), create_label(_("Rename to"), GTK_ALIGN_END), 0, 2, 1, 1);
 	gtk_grid_attach(GTK_GRID(grid), self->name = create_label("--", GTK_ALIGN_START), 1, 2, 3, 1);
 
-	// 3열 (빈줄)
+	// 3열: 빈줄(스페이서)
 	GtkWidget* spacer = gtk_label_new("");
 	gtk_widget_set_size_request(spacer, -1, 6);
 	gtk_grid_attach(GTK_GRID(grid), spacer, 0, 3, 4, 1);
 
-	// 4열
+	// 4열: 제목
 	gtk_grid_attach(GTK_GRID(grid), create_label(_("Title"), GTK_ALIGN_END), 0, 4, 1, 1);
 	gtk_grid_attach(GTK_GRID(grid), self->title = create_entry(self), 1, 4, 3, 1);
-	// 5열
+	// 5열: 작가, 순번
 	gtk_grid_attach(GTK_GRID(grid), create_label(_("Author"), GTK_ALIGN_END), 0, 5, 1, 1);
 	gtk_grid_attach(GTK_GRID(grid), self->author = create_entry(self), 1, 5, 1, 1);
 	gtk_grid_attach(GTK_GRID(grid), create_label(_("No."), GTK_ALIGN_END), 2, 5, 1, 1);
 	gtk_grid_attach(GTK_GRID(grid), self->index = create_entry(self), 3, 5, 1, 1);
-	// 6열
+	// 6열: 추가 정보
 	gtk_grid_attach(GTK_GRID(grid), create_label(_("Extra Information"), GTK_ALIGN_END), 0, 6, 1, 1);
 	gtk_grid_attach(GTK_GRID(grid), self->extra = create_entry(self), 1, 6, 3, 1);
 
@@ -332,14 +383,21 @@ static RenExDialog* renex_dialog_new(GtkWindow* parent, const char* filename)
 	gtk_box_append(GTK_BOX(box), button_box);
 	gtk_window_set_child(self->window, box);
 
-	//
+	// 파일명 분석 및 포커스 설정
 	parse_file_name(self, filename);
 	gtk_entry_grab_focus_without_selecting(GTK_ENTRY(self->title));
 
 	return self;
 }
 
-// 이름 바꾸기 대화상자 비동기로 실행해보자
+/**
+ * @brief 이름 바꾸기 대화상자를 비동기로 실행합니다.
+ *        완료 시 콜백이 호출됩니다.
+ * @param parent 부모 윈도우
+ * @param filename 원본 파일명
+ * @param callback 이름 바꾸기 완료 콜백
+ * @param user_data 콜백에 전달할 사용자 데이터
+ */
 void renex_dialog_show_async(GtkWindow* parent, const char* filename, RenameCallback callback, gpointer user_data)
 {
 	RenExDialog* self = renex_dialog_new(parent, filename);
@@ -349,3 +407,10 @@ void renex_dialog_show_async(GtkWindow* parent, const char* filename, RenameCall
 
 	gtk_window_present(self->window);
 }
+
+/**
+ * @note
+ * - RenExDialog는 파일명 분석, 입력 필드 관리, 콜백 처리 등 이름 바꾸기 대화상자의 모든 동작을 담당합니다.
+ * - 입력 필드의 값이 바뀔 때마다 파일명이 자동으로 갱신됩니다.
+ * - 콜백은 성공적으로 이름이 바뀐 경우에만 호출됩니다.
+ */

@@ -3,13 +3,22 @@
 #include "book.h"
 #include "doumi.h"
 
-// ZIP으로 된 책
+/**
+ * @file book_zip.c
+ * @brief ZIP 파일로 된 책(BookZip) 객체의 생성 및 관리 기능을 구현한 파일입니다.
+ *        ZIP 압축 파일을 책으로 인식하여 페이지 단위로 접근할 수 있도록 지원합니다.
+ */
+
+ /**
+  * @brief ZIP책(BookZip) 객체 구조체
+  */
 typedef struct BookZip
 {
-	Book base; // 상속
-	zip_t* zip;
+	Book base;    ///< Book 구조체를 상속하여 기본 정보 및 함수 테이블 포함
+	zip_t* zip;   ///< ZIP 파일 핸들
 } BookZip;
 
+// 내부 함수 선언
 static void bz_dispose(Book* book);
 static GBytes *bz_read_data(Book* book, int page);
 static bool bz_can_delete(Book* book);
@@ -17,7 +26,10 @@ static bool bz_delete(Book* book);
 static bool bz_move(Book* book, const char* move_filename);
 static gchar *bz_rename(Book* book, const char* new_filename);
 
-// ZIP책 함수 테이블
+/**
+ * @brief ZIP책(BookZip)용 함수 테이블
+ *        Book 구조체의 func 멤버에 할당되어 다형성을 제공합니다.
+ */
 static BookFunc bz_func =
 {
 	.dispose = bz_dispose,
@@ -29,7 +41,12 @@ static BookFunc bz_func =
 	.ext_compare = doumi_is_archive_zip, // ZIP파일인지 확인하는 함수
 };
 
-// ZIP책 만들기
+/**
+ * @brief ZIP 파일로부터 Book 객체를 생성합니다.
+ *        ZIP 파일 내의 이미지 파일을 페이지로 인식하여 BookZip 객체를 초기화합니다.
+ * @param zip_path ZIP 파일 경로
+ * @return 생성된 Book 객체 포인터, 실패 시 NULL
+ */
 Book *book_zip_new(const char* zip_path)
 {
 	// 먼저 ZIP파일 부터 확인
@@ -42,7 +59,7 @@ Book *book_zip_new(const char* zip_path)
 		return NULL; // ZIP파일 열기 실패
 	}
 
-	// ZIP책 만들어서 반환
+	// ZIP책(BookZip) 객체 생성 및 초기화
 	BookZip* bz = g_new0(BookZip, 1);
 	bz->base.func = bz_func;
 
@@ -59,7 +76,7 @@ Book *book_zip_new(const char* zip_path)
 		if (!doumi_is_image_file(s.name))
 			continue; // 이미지 파일이 아님
 
-		// 엔트리를 만들어 넣자고
+		 // 페이지 엔트리(PageEntry) 생성 및 추가
 		PageEntry* e = g_new0(PageEntry, 1);
 		e->page = (int)bz->base.entries->len;
 		e->manage = (int)i;
@@ -76,6 +93,11 @@ Book *book_zip_new(const char* zip_path)
 	return (Book*)bz;
 }
 
+/**
+ * @brief BookZip 객체를 해제합니다.
+ *        ZIP 파일 핸들을 닫고, Book의 기본 해제 함수도 호출합니다.
+ * @param book Book 객체 포인터
+ */
 static void bz_dispose(Book* book)
 {
 	BookZip* bz = (BookZip*)book;
@@ -84,6 +106,12 @@ static void bz_dispose(Book* book)
 	book_base_dispose(book);
 }
 
+/**
+ * @brief 지정한 페이지의 데이터를 읽어 GBytes로 반환합니다.
+ * @param book Book 객체 포인터
+ * @param page 읽을 페이지 번호
+ * @return 페이지 데이터(GBytes), 실패 시 NULL
+ */
 static GBytes *bz_read_data(Book* book, int page)
 {
 	BookZip* bz = (BookZip*)book;
@@ -116,12 +144,23 @@ static GBytes *bz_read_data(Book* book, int page)
 	return ret;
 }
 
+/**
+ * @brief 파일이 삭제 가능한지 확인합니다.
+ *        (읽기 전용이 아닌 경우에만 삭제 가능)
+ * @param book Book 객체 포인터
+ * @return 삭제 가능하면 true, 아니면 false
+ */
 static bool bz_can_delete(Book* book)
 {
 	// 원래 파일이 읽기 전용인가만 확인하자.
 	return !doumi_is_file_readonly(book->full_name);
 }
 
+/**
+ * @brief BookZip 객체의 파일을 삭제(휴지통 또는 완전 삭제)합니다.
+ * @param book Book 객체 포인터
+ * @return 성공 시 true, 실패 시 false
+ */
 static bool bz_delete(Book* book)
 {
 	BookZip* bz = (BookZip*)book;
@@ -150,6 +189,13 @@ static bool bz_delete(Book* book)
 	return true;
 }
 
+/**
+ * @brief BookZip 파일을 지정한 경로로 이동합니다. (내부 공통 함수)
+ * @param bz BookZip 객체 포인터
+ * @param src_path 원본 파일 경로
+ * @param dst_path 이동할 파일 경로
+ * @return 성공 시 true, 실패 시 false
+ */
 static bool bz_common_move(BookZip* bz, const char* src_path, const char* dst_path)
 {
 	if (bz->zip)
@@ -168,6 +214,12 @@ static bool bz_common_move(BookZip* bz, const char* src_path, const char* dst_pa
 	return res;
 }
 
+/**
+ * @brief BookZip 파일을 지정한 파일명으로 이동(이름 변경 포함)합니다.
+ * @param book Book 객체 포인터
+ * @param move_filename 이동할 파일명(전체 경로)
+ * @return 성공 시 true, 실패 시 false
+ */
 static bool bz_move(Book* book, const char* move_filename)
 {
 	if (g_strcmp0(book->full_name, move_filename) == 0)
@@ -179,6 +231,12 @@ static bool bz_move(Book* book, const char* move_filename)
 	return bz_common_move((BookZip*)book, book->full_name, move_filename);
 }
 
+/**
+ * @brief BookZip 파일의 이름을 변경합니다.
+ * @param book Book 객체 포인터
+ * @param new_filename 새 파일명(경로 제외)
+ * @return 새 경로 문자열(호출자가 해제 필요), 실패 시 NULL
+ */
 static gchar *bz_rename(Book* book, const char* new_filename)
 {
 	gchar* new_path = g_build_filename(book->dir_name, new_filename, NULL);
@@ -197,3 +255,11 @@ static gchar *bz_rename(Book* book, const char* new_filename)
 
 	return new_path; // 새 경로 반환, 호출자가 해제해야 함;
 }
+
+/**
+ * @note
+ * - BookZip 구조체는 Book을 상속하여 다형성을 제공합니다.
+ * - ZIP 파일 내 이미지 파일만 페이지로 인식합니다.
+ * - 파일 이동/삭제/이름 변경 시 ZIP 핸들을 반드시 닫아야 합니다.
+ * - 함수 테이블(bz_func)을 통해 Book 인터페이스와 연동됩니다.
+ */
