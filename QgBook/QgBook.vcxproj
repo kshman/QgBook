@@ -158,6 +158,7 @@
     <ClCompile Include="configs_def.c" />
     <ClCompile Include="configs_ss.c" />
     <ClCompile Include="doumi.c" />
+    <ClCompile Include="move_dialog.c" />
     <ClCompile Include="page_dialog.c" />
     <ClCompile Include="pch.c">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>

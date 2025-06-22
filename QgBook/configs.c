@@ -703,7 +703,7 @@ void movloc_edit(int no, const char* alias, const char* folder)
 {
 	if (alias == NULL || folder == NULL)
 		return;
-	if (no < 0 || no >= cfgs.moves->len)
+	if (no < 0 || no >= (int)cfgs.moves->len)
 		return;
 
 	MoveLocation* p = (MoveLocation*)g_ptr_array_index(cfgs.moves, no);
@@ -726,7 +726,7 @@ void movloc_reindex(void)
 // 책 이동 위치를 삭제합니다.
 bool movloc_delete(int no)
 {
-	if (no < 0 || no >= cfgs.moves->len)
+	if (no < 0 || no >= (int)cfgs.moves->len)
 		return false;
 
 	g_ptr_array_remove_index(cfgs.moves, no);
@@ -738,7 +738,7 @@ bool movloc_delete(int no)
 // 책 이동 위치의 순번을 바꿉니다.
 bool movloc_swap(int from, int to)
 {
-	if (from < 0 || from >= cfgs.moves->len || to < 0 || to >= cfgs.moves->len || from == to)
+	if (from < 0 || from >= (int)cfgs.moves->len || to < 0 || to >= (int)cfgs.moves->len || from == to)
 		return false;
 
 	MoveLocation* p1 = (MoveLocation*)g_ptr_array_index(cfgs.moves, from);
@@ -890,7 +890,7 @@ bool nears_build(const char* dir, NearExtentionCompare compare)
 	if (dir == NULL || compare == NULL)
 		return false; // 디렉토리나 비교 함수가 NULL이면 실패
 
-	if (g_strcmp0(cfgs.near_dir, dir) == 0 && cfgs.near_compare == compare)
+	if (cfgs.near_compare == compare && g_strcmp0(cfgs.near_dir, dir) == 0)
 		return true; // 같은 디렉토리 & 비교 함수가 같으면 아무것도 안함
 
 	GDir* gd = g_dir_open(dir, 0, NULL);
@@ -935,6 +935,8 @@ bool nears_build_if(const char* dir, NearExtentionCompare compare, const char* f
 				return true; // 이미 근처 파일에 있으면 아무것도 안함
 		}
 	}
+
+	cfgs.near_compare = NULL;	// 현재 비교 함수 초기화 -> 강제로 빌드
 	return nears_build(dir, compare);
 }
 

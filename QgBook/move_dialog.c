@@ -91,7 +91,7 @@ static void refresh_list(MoveDialog* self)
 
 	if (locs->len > 0)
 	{
-		if (s_last_selected >= 0 && s_last_selected < locs->len)
+		if (s_last_selected >= 0 && s_last_selected < (int)locs->len)
 			gtk_single_selection_set_selected(GTK_SINGLE_SELECTION(self->selection), s_last_selected);
 		else
 		{
@@ -255,7 +255,7 @@ static MoveDialog *move_dialog_new(GtkWindow* parent)
 
 	self->window = GTK_WINDOW(gtk_window_new());
 	gtk_window_set_transient_for(self->window, parent);
-	gtk_window_set_title(self->window, "책 이동하기");
+	gtk_window_set_title(self->window, _("Move book"));
 	gtk_window_set_modal(self->window, TRUE);
 	gtk_window_set_default_size(self->window, 500, 550);
 	g_signal_connect(self->window, "destroy", G_CALLBACK(signal_destroy), self);

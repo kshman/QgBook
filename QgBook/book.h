@@ -76,7 +76,7 @@ typedef struct RenameData
 } RenameData;
 
 // 책 이름 바꾸기 콜백
-typedef void (*RenameCallback)(gpointer sender, RenameData* data);
+typedef void (*RenameCallback)(gpointer sender, const char* filename, bool reopen);
 
 // 쪽 선택 콜백
 typedef void (*PageSelectCallback)(gpointer sender, int page);

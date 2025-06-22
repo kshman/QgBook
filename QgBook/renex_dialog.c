@@ -19,10 +19,9 @@ typedef struct RenExDialog
 	RenameCallback callback;
 	gpointer user_data;
 
-	bool initialized;
-	bool reopen;
-
-	GtkResponseType response;
+	bool initialized;	// 파일 이름이 초기화 되었는지 여부
+	bool reopen;		// 다시 열기 플래그
+	bool result;		// 결과 (성공 여부)
 } RenExDialog;
 
 // 파일 이름 만들기
@@ -141,21 +140,21 @@ static void parse_file_name(RenExDialog* self, const char* filename)
 // 취소 콜백
 static void cancel_callback(GtkWidget* widget, RenExDialog* self)
 {
-	self->response = GTK_RESPONSE_CANCEL;
+	self->result = false; // 취소됨
 	gtk_window_close(self->window);
 }
 
 // OK 콜백
 static void ok_callback(GtkWidget* widget, RenExDialog* self)
 {
-	self->response = GTK_RESPONSE_OK;
+	self->result = true;
 	gtk_window_close(self->window);
 }
 
 // 다시 열기 콜백
 static void reopen_callback(GtkWidget* widget, RenExDialog* self)
 {
-	self->response = GTK_RESPONSE_OK;
+	self->result = true;
 	self->reopen = true; // 다시 열기 플래그 설정
 	gtk_window_close(self->window);
 }
@@ -206,7 +205,7 @@ static void entry_activate(GtkEntry* entry, RenExDialog* self)
 	}
 	else if (entry == GTK_ENTRY(self->extra))
 	{
-		// 추가 정보 입력창에서 엔터키를 누르면 다이얼로그	를 닫고 OK 콜백 호출
+		// 추가 정보 입력창에서 엔터키를 누르면 다이얼로그를 닫고 OK 콜백 호출
 		ok_callback(NULL, self);
 	}
 }
@@ -239,20 +238,12 @@ static GtkWidget* create_label(const char* text, GtkAlign align)
 // 윈도우 종료되고 나서 콜백
 static void signal_destroy(GtkWidget* widget, RenExDialog* self)
 {
-	if (self->callback)
+	if (self->callback && self->result)
 	{
-		if (self->response != GTK_RESPONSE_OK)
-			self->callback(self->user_data, NULL);
-		else
-		{
-			RenameData* data = g_new0(RenameData, 1);
-			data->result = true;
-			data->reopen = self->reopen;
-			g_strlcpy(data->filename, self->filename, sizeof(data->filename));
-			self->callback(self->user_data, data);
-			g_free(data);
-		}
+		self->callback(self->user_data, self->filename, self->reopen);	// 콜백 호출
+		// 취소 또는 닫기에는 콜백을 호출하지 않음
 	}
+
 	g_free(self);
 }
 
@@ -344,8 +335,6 @@ static RenExDialog* renex_dialog_new(GtkWindow* parent, const char* filename)
 	//
 	parse_file_name(self, filename);
 	gtk_entry_grab_focus_without_selecting(GTK_ENTRY(self->title));
-
-	self->response = GTK_RESPONSE_NONE;
 
 	return self;
 }

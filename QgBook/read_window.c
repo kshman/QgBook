@@ -1034,20 +1034,21 @@ static void shortcut_delete_book(ReadWindow* self)
 }
 
 // 책 이름 바꾸기 콜백
-static void cb_rename_book_done(gpointer sender, RenameData* data)
+// 다이얼로그에서 취소하면 호출되지 않는다
+static void cb_rename_book_done(gpointer sender, const char* filename, bool reopen)
 {
 	ReadWindow* self = sender;
 
-	if (data == NULL || !data->result || *data->filename == '\0')
+	if (!filename || *filename == '\0')
 		return;
 
-	if (g_strcmp0(data->filename, self->book->base_name) == 0)
+	if (g_strcmp0(filename, self->book->base_name) == 0)
 		return;
 
 	// 이름 바꾸기 전에 근처 파일을 만들어 놔야 한다
 	nears_build(self->book->dir_name, self->book->func.ext_compare);
 
-	char* new_filename = book_rename(self->book, data->filename);
+	char* new_filename = book_rename(self->book, filename);
 	if (new_filename == NULL)
 	{
 		notify(self, 0, _("Failed to rename book"));
@@ -1077,19 +1078,53 @@ static void shortcut_rename_book(ReadWindow* self)
 }
 
 // 책 옮기기 콜백
+// 다이얼로그에서 취소하면 호출되지 않는다
 void cb_move_book_done(gpointer sender, const char* directory)
 {
 	ReadWindow* self = sender;
-	notify(self, 0, directory);
+
+	if (self->book == NULL)
+	{
+		// 책이 없으면 안내만 표시하고 나감
+		notify(self, 0, _("No book to move"));
+		return;
+	}
+
+	if (!directory || *directory == '\0')
+		return;
+
+	if (g_strcmp0(directory, self->book->dir_name) == 0)
+	{
+		notify(self, 0, _("Book is already in the selected directory"));
+		return;
+	}
+
+	gchar* fullname = g_build_filename(directory, self->book->base_name, NULL);
+	// 이름 바꾸기 전에 근처 파일을 만들어 놔야 한다
+	nears_build(self->book->dir_name, self->book->func.ext_compare);
+
+	if (!book_move(self->book, fullname))
+	{
+		notify(self, 0, _("Failed to rename book"));
+		g_free(fullname);
+		return;
+	}
+
+	self->book->cur_page = 0; // 페이지는 초기화
+
+	const char* next = nears_get_for_remove(self->book->full_name);
+	g_free(fullname);
+
+	GFile* file = g_file_new_for_path(next);
+	open_book(self, file);
+	g_object_unref(file);
 }
 
 // 단축키 - 책 옮기기
 // 현재 단축키 밖에 없다.
 static void shortcut_move_book(ReadWindow* self)
 {
-	if (self->book == NULL)
-		return;
-
+	// 책이 없어도 편집이 가능하도록 책 검사는 안한다
 	reset_key(self); // 다이얼로그가 키를 먹어버리므로 키 입력 초기화
 
 	move_dialog_show_async(GTK_WINDOW(self->window), cb_move_book_done, self);
