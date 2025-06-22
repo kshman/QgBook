@@ -164,26 +164,3 @@ static inline gchar* book_rename(Book* book, const char* new_filename) { return 
  * @return 생성된 Book 객체 포인터, 실패 시 NULL
  */
 extern Book* book_zip_new(const char* zip_path);
-
-
-/**
- * @brief 책 이름 바꾸기 콜백 함수 타입
- * @param sender 호출자
- * @param filename 새 파일 이름
- * @param reopen 다시 열기 플래그
- */
-typedef void (*RenameCallback)(gpointer sender, const char* filename, bool reopen);
-
-/**
- * @brief 쪽 선택 콜백 함수 타입
- * @param sender 호출자
- * @param page 선택된 페이지 번호
- */
-typedef void (*PageSelectCallback)(gpointer sender, int page);
-
-/**
- * @brief 책 이동 콜백 함수 타입
- * @param sender 호출자
- * @param directory 이동할 디렉토리 경로
- */
-typedef void (*MoveCallback)(gpointer sender, const char* directory);

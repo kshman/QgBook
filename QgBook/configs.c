@@ -458,13 +458,8 @@ bool config_init(void)
 	if (!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS configs (key TEXT PRIMARY KEY, value TEXT);") ||
 		!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS moves (no INTEGER PRIMARY KEY, alias TEXT, folder TEXT);") ||
 		!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS recently (filename TEXT PRIMARY KEY, page INTEGER);") ||
-		!sql_exec_stmt(
-				db,
-				"CREATE TABLE IF NOT EXISTS bookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT, page INTEGER);")
-		||
-		!sql_exec_stmt(
-				db,
-				"CREATE TABLE IF NOT EXISTS shortcuts (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, alias TEXT);"))
+		!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS bookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT, page INTEGER);") ||
+		!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS shortcuts (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, alias TEXT);"))
 	{
 		sqlite3_close(db);
 		return false;
@@ -837,7 +832,7 @@ bool movloc_add(const char* alias, const char* folder)
 	}
 	for (guint i = 0; i < cfgs.moves->len; i++)
 	{
-		MoveLocation* p = (MoveLocation*)g_ptr_array_index(cfgs.moves, i);
+		const MoveLocation* p = g_ptr_array_index(cfgs.moves, i);
 		if (g_strcmp0(p->folder, folder) == 0)
 		{
 			g_log("CONFIG", G_LOG_LEVEL_WARNING, _("Move location with the same alias or folder already exists"));
@@ -865,7 +860,7 @@ void movloc_edit(int no, const char* alias, const char* folder)
 	if (no < 0 || no >= (int)cfgs.moves->len)
 		return;
 
-	MoveLocation* p = (MoveLocation*)g_ptr_array_index(cfgs.moves, no);
+	MoveLocation* p = g_ptr_array_index(cfgs.moves, no);
 	g_free(p->alias);
 	g_free(p->folder);
 	p->alias = g_strdup(alias);
@@ -911,11 +906,14 @@ bool movloc_swap(int from, int to)
 	if (from < 0 || from >= (int)cfgs.moves->len || to < 0 || to >= (int)cfgs.moves->len || from == to)
 		return false;
 
-	MoveLocation* p1 = (MoveLocation*)g_ptr_array_index(cfgs.moves, from);
-	MoveLocation* p2 = (MoveLocation*)g_ptr_array_index(cfgs.moves, to);
+	MoveLocation* p1 = g_ptr_array_index(cfgs.moves, from);
+	MoveLocation* p2 = g_ptr_array_index(cfgs.moves, to);
 
 	g_ptr_array_index(cfgs.moves, from) = p2;
 	g_ptr_array_index(cfgs.moves, to) = p1;
+
+	p1->no = to; // 새 인덱스로 번호 설정
+	p2->no = from; // 새 인덱스로 번호 설정
 
 	movloc_reindex();
 
@@ -957,7 +955,7 @@ void movloc_commit(void)
 			sql_error(db, true);
 			return;
 		}
-		sqlite3_bind_int(stmt, 1, p->no);
+		sqlite3_bind_int(stmt, 1, i);
 		sqlite3_bind_text(stmt, 2, p->alias, -1, SQLITE_STATIC);
 		sqlite3_bind_text(stmt, 3, p->folder, -1, SQLITE_STATIC);
 

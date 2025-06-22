@@ -624,52 +624,72 @@ bool doumi_get_primary_monitor_dimension(int* width, int* height)
 	return true;
 }
 
-// 메시지 박스 선택 콜백 구조체
-struct mesg_box_sync
+// 메지시 박스 데이터
+typedef struct MesgBoxData
 {
-	GMainLoop* loop;
-	int result;
-};
+	MesgBoxCallback callback; // 콜백 함수
+	gpointer user_data; // 사용자 데이터
+} MesgBoxData;
 
-// 메시지 박스 선택 콜백
-static void mesg_box_on_choose(GObject* source_object, GAsyncResult* res, gpointer user_data)
+// 메시지 박스 콜백
+void cb_mesg_box_choose(GObject* source_object, GAsyncResult* res, gpointer user_data)
 {
+	MesgBoxData* data = user_data;
 	GtkAlertDialog* dialog = GTK_ALERT_DIALOG(source_object);
-	int response = gtk_alert_dialog_choose_finish(dialog, res, NULL);
-	struct mesg_box_sync* sync = user_data;
-	sync->result = response;
-	g_main_loop_quit(sync->loop);
+	const int button = gtk_alert_dialog_choose_finish(dialog, res, NULL);
+	if (data->callback)
+		data->callback(data->user_data, button == 0);
+	g_free(data);
 }
 
-// 메시지 박스
-bool doumi_mesg_box(GtkWindow* parent, const char* text, const char* detail, bool false_ok_true_yn)
+// 메시지 박스 공통
+static GtkAlertDialog* create_alert_mesg_box(const char* text, const char* detail, const char** buttons)
 {
+	if (!text || !*text || !buttons)
+		return NULL;
 	GtkAlertDialog* dialog = gtk_alert_dialog_new("");
 	gtk_alert_dialog_set_modal(dialog, true);
 	gtk_alert_dialog_set_message(dialog, text);
 	gtk_alert_dialog_set_detail(dialog, detail);
-
-	if (false_ok_true_yn)
-	{
-		const char* yesno_buttons[] = { _("Yes"), _("No"), NULL };
-		gtk_alert_dialog_set_buttons(dialog, yesno_buttons);
-	}
-	else
-	{
-		const char* ok_buttons[] = { _("OK"), NULL };
-		gtk_alert_dialog_set_buttons(dialog, ok_buttons);
-	}
-
+	gtk_alert_dialog_set_buttons(dialog, buttons);
 	gtk_alert_dialog_set_default_button(dialog, 0);
+	return dialog;
+}
 
-	// 비동기 콜백 대신 동기적으로 결과를 받기 위한 구조
-	struct mesg_box_sync sync = { g_main_loop_new(NULL, FALSE), -1 };
+// 확인 메시지 박스 보이기
+void doumi_mesg_ok_show_async(
+	GtkWindow* parent,
+	const char* text, const char* detail,
+	MesgBoxCallback callback, gpointer user_data)
+{
+	const char* buttons[] = { _("OK"), NULL };
+	GtkAlertDialog* dialog = create_alert_mesg_box(text, detail, buttons);
+	if (dialog == NULL)
+		return;
 
-	// 콜백에서 sync.result에 결과 저장
-	gtk_alert_dialog_choose(dialog, parent, NULL, mesg_box_on_choose, &sync);
-	g_main_loop_run(sync.loop);
-	g_main_loop_unref(sync.loop);
+	MesgBoxData* data = g_new(MesgBoxData, 1);
+	data->callback = callback;
+	data->user_data = user_data;
+
+	gtk_alert_dialog_choose(dialog, parent, NULL, cb_mesg_box_choose, data);
 	g_object_unref(dialog);
+}
 
-	return sync.result == 0; // OK/Yes: 0, No: 1
+// 예/아니오 메시지 박스 보이기
+void doumi_mesg_yesno_show_async(
+	GtkWindow* parent,
+	const char* text, const char* detail,
+	MesgBoxCallback callback, gpointer user_data)
+{
+	const char* buttons[] = { _("Yes"), _("No"), NULL };
+	GtkAlertDialog* dialog = create_alert_mesg_box(text, detail, buttons);
+	if (dialog == NULL)
+		return;
+
+	MesgBoxData* data = g_new(MesgBoxData, 1);
+	data->callback = callback;
+	data->user_data = user_data;
+
+	gtk_alert_dialog_choose(dialog, parent, NULL, cb_mesg_box_choose, data);
+	g_object_unref(dialog);
 }

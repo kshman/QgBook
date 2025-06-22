@@ -1,6 +1,6 @@
 ﻿#include "pch.h"
-#include "book.h"
 #include "configs.h"
+#include "doumi.h"
 
 // 이동 선택용 정보
 #define TYPE_MOVE_OBJECT (move_object_get_type())
@@ -9,6 +9,7 @@ G_DECLARE_FINAL_TYPE(MoveObject, move_object, , move_object, GObject)
 typedef struct _MoveObject
 {
 	GObject parent_instance;
+	int no; // 이동 위치 번호
 	gchar* alias; // 이동 별칭
 	gchar* folder; // 대상 경로
 } MoveObject;
@@ -31,13 +32,15 @@ static void move_object_class_init(MoveObjectClass* klass)
 
 static void move_object_init(MoveObject* self)
 {
+	self->no = -1; // 초기 번호는 -1
 	self->alias = NULL;
 	self->folder = NULL;
 }
 
-static MoveObject *move_object_new(const MoveLocation* location)
+static MoveObject* move_object_new(const MoveLocation* location)
 {
 	MoveObject* obj = g_object_new(TYPE_MOVE_OBJECT, NULL);
+	obj->no = location->no;
 	obj->alias = g_strdup(location->alias);
 	obj->folder = g_strdup(location->folder);
 	return obj;
@@ -51,29 +54,24 @@ typedef struct MoveDialog
 	GtkWidget* move_list; // GtkColumnView
 	GListStore* list_store; // GListStore<MoveObject>
 	GtkSelectionModel* selection; // GtkSingleSelection
-
-	GtkWidget* browser_button; // 브라우저 버튼
-	GtkWidget* dest_text; // 대상 경로 입력창
-
-	GtkWidget* move_menu; // 메뉴
-	GtkWidget* move_add_menu_item; // 이동 추가 메뉴 아이템
-	GtkWidget* move_change_menu_item; // 이동 변경 메뉴 아이템
-	GtkWidget* move_alias_menu_item; // 이동 별칭 메뉴 아이템
-	GtkWidget* move_delete_menu_item; // 이동 삭제 메뉴 아이템
-
-	char filename[2048];
+	GtkWidget* dest; // 대상 경로 입력창
 
 	MoveCallback callback; // 선택 콜백
 	gpointer user_data; // 콜백 사용자 데이터
+
+	guint selected_index;	// 현재 선택된 인덱스
+
+	char filename[2048];
 
 	bool refreshing; // 새로 고침 중인지 여부
 	bool modified; // 수정 여부
 	bool result; // 결과 (성공 여부)
 } MoveDialog;
 
-// 마지막 선택 위치
+// 마지막 선택 위치, 창을 닫았다 열어도 유지
 static int s_last_selected = -1;
 
+// 목록을 설정에서 가져와서 새로 고침
 static void refresh_list(MoveDialog* self)
 {
 	self->refreshing = true;
@@ -100,15 +98,47 @@ static void refresh_list(MoveDialog* self)
 		}
 
 		gtk_column_view_scroll_to(
-				GTK_COLUMN_VIEW(self->move_list),
-				s_last_selected,
-				NULL,
-				GTK_LIST_SCROLL_FOCUS | GTK_LIST_SCROLL_SELECT,
-				NULL);
+			GTK_COLUMN_VIEW(self->move_list),
+			s_last_selected,
+			NULL,
+			GTK_LIST_SCROLL_FOCUS | GTK_LIST_SCROLL_SELECT,
+			NULL);
 	}
 	gtk_widget_grab_focus(self->move_list);
 
 	self->refreshing = false;
+}
+
+// 디렉토리 이름으로 항목 선택
+static bool ensure_folder(MoveDialog* self, const char* folder)
+{
+	if (!folder || *folder == '\0')
+		return false;
+
+	const guint count = g_list_model_get_n_items(G_LIST_MODEL(self->list_store));
+	for (guint i = 0; i < count; ++i)
+	{
+		MoveObject* obj = g_list_model_get_item(G_LIST_MODEL(self->list_store), i);
+		if (!obj)
+			continue; // 항목이 없으면 건너뜀
+
+		const bool cmp = g_strcmp0(obj->folder, folder) == 0;
+		g_object_unref(obj);
+
+		if (!cmp)
+			continue; // 일치하지 않으면 다음 항목으로
+
+		// 해당 항목 선택 및 스크롤
+		gtk_single_selection_set_selected(GTK_SINGLE_SELECTION(self->selection), i);
+		gtk_column_view_scroll_to(
+			GTK_COLUMN_VIEW(self->move_list),
+			i,
+			NULL,
+			GTK_LIST_SCROLL_FOCUS | GTK_LIST_SCROLL_SELECT,
+			NULL);
+		return true;
+	}
+	return false;
 }
 
 static void on_row_activated(GtkColumnView* view, guint pos, MoveDialog* self)
@@ -121,15 +151,16 @@ static void on_row_selected_notify(GObject* object, GParamSpec* pspec, MoveDialo
 {
 	GtkSingleSelection* sel = GTK_SINGLE_SELECTION(self->selection);
 	const guint count = g_list_model_get_n_items(G_LIST_MODEL(self->list_store));
-	const guint idx = gtk_single_selection_get_selected(sel);
-	if (count > 0 && idx != GTK_INVALID_LIST_POSITION)
+	self->selected_index = gtk_single_selection_get_selected(sel);
+	if (count > 0 && self->selected_index != GTK_INVALID_LIST_POSITION)
 	{
-		MoveObject* obj = g_list_model_get_item(G_LIST_MODEL(self->list_store), idx);
+		MoveObject* obj = g_list_model_get_item(G_LIST_MODEL(self->list_store), self->selected_index);
 		g_strlcpy(self->filename, obj->folder, sizeof(self->filename));
 		g_object_unref(obj);
-		gtk_editable_set_text(GTK_EDITABLE(self->dest_text), self->filename);
+		gtk_editable_set_text(GTK_EDITABLE(self->dest), self->filename);
+
 		if (!self->refreshing)
-			s_last_selected = (int)idx; // 마지막 선택 위치 저장
+			s_last_selected = (int)self->selected_index; // 마지막 선택 위치 저장
 	}
 }
 
@@ -141,7 +172,7 @@ void cb_browse_click_finish(GObject* source_object, GAsyncResult* res, gpointer 
 	if (folder)
 	{
 		char* path = g_file_get_path(folder);
-		gtk_editable_set_text(GTK_EDITABLE(self->dest_text), path);
+		gtk_editable_set_text(GTK_EDITABLE(self->dest), path);
 		g_free(path);
 		g_object_unref(folder);
 	}
@@ -155,7 +186,7 @@ static void on_browse_clicked(GtkButton* btn, MoveDialog* self)
 	gtk_file_dialog_set_accept_label(dlg, _("Select"));
 	gtk_file_dialog_set_modal(dlg, TRUE);
 
-	const char* last = gtk_editable_get_text(GTK_EDITABLE(self->dest_text));
+	const char* last = gtk_editable_get_text(GTK_EDITABLE(self->dest));
 	if (!last || *last == '\0')
 		last = config_get_string_ptr(CONFIG_FILE_LAST_DIRECTORY, false);
 
@@ -174,6 +205,46 @@ static void on_browse_clicked(GtkButton* btn, MoveDialog* self)
 	gtk_file_dialog_select_folder(dlg, self->window, NULL, cb_browse_click_finish, self);
 }
 
+// 새 위치 추가
+static void on_add_location_clicked(GtkButton* btn, MoveDialog* self)
+{
+	const char* path = gtk_editable_get_text(GTK_EDITABLE(self->dest));
+	if (!path || *path == '\0')
+		return;
+
+	GFile* folder = g_file_new_for_path(path);
+	if (!g_file_query_exists(folder, NULL) ||
+		g_file_query_file_type(folder, G_FILE_QUERY_INFO_NONE, NULL) != G_FILE_TYPE_DIRECTORY)
+	{
+		doumi_mesg_ok_show_async(GTK_WINDOW(self->window),
+			_("The specified directory does not exist"), path, NULL, NULL);
+		g_object_unref(folder);
+		return;
+	}
+	g_object_unref(folder);
+
+	if (ensure_folder(self, path))
+	{
+		// 이미 존재하고, 항목을 선택까지 했다
+		return;
+	}
+
+	gchar* alias = g_path_get_basename(path);
+	const bool ret = movloc_add(alias, path);
+	g_free(alias);
+
+	if (!ret)
+	{
+		doumi_mesg_ok_show_async(GTK_WINDOW(self->window), _("Failed to add the location"), path, NULL, NULL);
+		return;
+	}
+
+	refresh_list(self);
+	ensure_folder(self, path); // 새로 추가한 위치 선택
+
+	self->modified = true; // 목록이 수정됨
+}
+
 // OK 콜백
 static void ok_callback(GtkWidget* widget, MoveDialog* self)
 {
@@ -188,19 +259,52 @@ static void cancel_callback(GtkWidget* widget, MoveDialog* self)
 	gtk_window_close(self->window);
 }
 
+// 항목 삭제 콜백
+static void delete_callback(gpointer sender, bool result)
+{
+	MoveDialog* self = sender;
+	if (!result || self->selected_index == GTK_INVALID_LIST_POSITION)
+		return; // 취소되었거나 선택된 항목이 없음
+
+	MoveObject* obj = g_list_model_get_item(G_LIST_MODEL(self->list_store), self->selected_index);
+	if (!obj)
+		return; // 항목이 없으면 그냥 나감
+
+	movloc_delete(obj->no); // 설정에서 삭제
+	refresh_list(self);
+
+	self->modified = true; // 목록이 수정됨
+}
+
 // 키 눌림
 static gboolean signal_key_pressed(
-		GtkEventControllerKey* controller,
-		guint keyval,
-		guint keycode,
-		GdkModifierType state,
-		MoveDialog* self)
+	GtkEventControllerKey* controller,
+	guint keyval, guint keycode, GdkModifierType state,
+	MoveDialog* self)
 {
 	if (keyval == GDK_KEY_Escape)
 	{
 		// Esc 키 입력 처리
 		cancel_callback(NULL, self);
 		return true; // 이벤트 중단
+	}
+
+	if (keyval == GDK_KEY_Delete)
+	{
+		// 항목 삭제
+		if (self->selected_index == GTK_INVALID_LIST_POSITION)
+			return true; // 선택된 항목이 없으면 아무것도 안함
+		doumi_mesg_yesno_show_async(self->window, _("Delete selected location?"), NULL, delete_callback, self);
+		return true;
+	}
+
+	if (keyval == GDK_KEY_F2)
+	{
+		// F2 키 입력 처리 (편집 모드 등)
+		if (self->selected_index == GTK_INVALID_LIST_POSITION)
+			return true;
+
+		// 선택된 항목이 있으면 편집 모드로 전환
 	}
 
 	return false; // 기본 동작 계속
@@ -220,6 +324,9 @@ static void signal_destroy(GtkWindow* window, MoveDialog* self)
 		self->callback(self->user_data, self->filename); // 콜백 호출
 		// 취소나 닫기 시에는 콜백을 호출하지 않음
 	}
+
+	if (self->modified)
+		movloc_commit();	// 이동 목록을 설정에 커밋
 
 	g_free(self);
 }
@@ -249,7 +356,7 @@ static void factory_bind_path(GtkListItemFactory* factory, GtkListItem* item, gp
 }
 
 // 만들기
-static MoveDialog *move_dialog_new(GtkWindow* parent)
+static MoveDialog* move_dialog_new(GtkWindow* parent)
 {
 	MoveDialog* self = g_new0(MoveDialog, 1);
 
@@ -257,7 +364,7 @@ static MoveDialog *move_dialog_new(GtkWindow* parent)
 	gtk_window_set_transient_for(self->window, parent);
 	gtk_window_set_title(self->window, _("Move book"));
 	gtk_window_set_modal(self->window, TRUE);
-	gtk_window_set_default_size(self->window, 500, 550);
+	gtk_window_set_default_size(self->window, 500, 600);
 	g_signal_connect(self->window, "destroy", G_CALLBACK(signal_destroy), self);
 
 	// 콘텐츠 영역
@@ -299,16 +406,17 @@ static MoveDialog *move_dialog_new(GtkWindow* parent)
 	// 경로 입력
 	GtkWidget* dest_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
 
-	self->dest_text = gtk_entry_new();
-	gtk_widget_set_hexpand(self->dest_text, TRUE);
-	gtk_box_append(GTK_BOX(dest_box), self->dest_text);
+	GtkWidget* browser = gtk_button_new_with_label(_("Browse"));
+	g_signal_connect(browser, "clicked", G_CALLBACK(on_browse_clicked), self);
+	gtk_box_append(GTK_BOX(dest_box), browser);
 
-	self->browser_button = gtk_button_new_with_label(_("Browse"));
-	g_signal_connect(self->browser_button, "clicked", G_CALLBACK(on_browse_clicked), self);
-	gtk_box_append(GTK_BOX(dest_box), self->browser_button);
+	self->dest = gtk_entry_new();
+	gtk_widget_set_hexpand(self->dest, TRUE);
+	gtk_box_append(GTK_BOX(dest_box), self->dest);
 
-	// 메뉴 (PopoverMenu)
-	// ... (page_dialog.c 참고, 메뉴 항목 생성 및 연결)
+	GtkWidget* add_button = gtk_button_new_with_label(_("Add location"));
+	g_signal_connect(add_button, "clicked", G_CALLBACK(on_add_location_clicked), self);
+	gtk_box_append(GTK_BOX(dest_box), add_button);
 
 	// OK/Cancel 버튼
 	GtkWidget* button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -344,6 +452,7 @@ static MoveDialog *move_dialog_new(GtkWindow* parent)
 	gtk_widget_add_controller(GTK_WIDGET(self->window), GTK_EVENT_CONTROLLER(key_controller));
 
 	//
+	self->selected_index = GTK_INVALID_LIST_POSITION;
 	refresh_list(self);
 
 	return self;
@@ -359,3 +468,66 @@ void move_dialog_show_async(GtkWindow* parent, MoveCallback callback, gpointer u
 
 	gtk_window_present(self->window); // 비동기로 열기
 }
+
+
+#if false
+// 셀 편집 기능 만들던거
+// 빌드 안됨
+
+// 편집용 Entry를 동적으로 삽입
+static void start_edit_alias(MoveDialog* self, guint row)
+{
+	GtkColumnView* view = GTK_COLUMN_VIEW(self->move_list);
+	GtkListItem* item = gtk_column_view_get_row(view, row);
+	if (!item) return;
+
+	MoveObject* obj = gtk_list_item_get_item(item);
+	if (!obj) return;
+
+	GtkWidget* entry = gtk_entry_new();
+	gtk_entry_set_text(GTK_ENTRY(entry), obj->alias);
+	gtk_widget_grab_focus(entry);
+
+	// 엔터/포커스아웃 시 편집 완료
+	g_signal_connect(entry, "activate", G_CALLBACK(on_edit_alias_commit), self);
+	g_signal_connect(entry, "focus-out-event", G_CALLBACK(on_edit_alias_commit), self);
+
+	gtk_list_item_set_child(item, entry);
+}
+
+// 편집 완료 시 호출
+static gboolean on_edit_alias_commit(GtkWidget* entry, GdkEvent* event, gpointer user_data)
+{
+	MoveDialog* self = (MoveDialog*)user_data;
+	guint row = self->selected_index;
+	GtkColumnView* view = GTK_COLUMN_VIEW(self->move_list);
+	GtkListItem* item = gtk_column_view_get_row(view, row);
+	if (!item) return FALSE;
+
+	MoveObject* obj = gtk_list_item_get_item(item);
+	if (!obj) return FALSE;
+
+	const char* new_alias = gtk_entry_get_text(GTK_ENTRY(entry));
+	if (g_strcmp0(obj->alias, new_alias) != 0)
+	{
+		g_free(obj->alias);
+		obj->alias = g_strdup(new_alias);
+		self->modified = true;
+		// 필요시 movloc_update(obj->no, obj->alias, obj->folder);
+	}
+
+	// Entry를 Label로 교체
+	GtkWidget* label = gtk_label_new(obj->alias);
+	gtk_widget_set_halign(label, GTK_ALIGN_START);
+	gtk_list_item_set_child(item, label);
+
+	return FALSE;
+}
+
+if (keyval == GDK_KEY_F2)
+{
+	if (self->selected_index != GTK_INVALID_LIST_POSITION)
+		start_edit_alias(self, self->selected_index);
+	return TRUE;
+}
+#endif
