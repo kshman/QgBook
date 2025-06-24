@@ -110,13 +110,13 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AdditionalOptions>/ID:/APPL/oss/include /ID:/APPL/oss/include/gtk-4.0 /ID:/APPL/oss/include/pango-1.0 /ID:/APPL/oss/include/fribidi /ID:/APPL/oss/include/harfbuzz /ID:/APPL/oss/include/gdk-pixbuf-2.0 /ID:/APPL/oss/include/cairo /ID:/APPL/oss/include/freetype2 /ID:/APPL/oss/include/libpng16 /ID:/APPL/oss/include/pixman-1 /ID:/APPL/oss/include/graphene-1.0 /ID:/APPL/oss/lib/graphene-1.0/include /ID:/APPL/oss/include /ID:/APPL/oss/include/glib-2.0 /ID:/APPL/oss/lib/glib-2.0/include %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/ID:/APPL/ucrt/include /ID:/APPL/ucrt/include/gtk-4.0 /ID:/APPL/ucrt/include/pango-1.0 /ID:/APPL/ucrt/include/fribidi /ID:/APPL/ucrt/include/harfbuzz /ID:/APPL/ucrt/include/gdk-pixbuf-2.0 /ID:/APPL/ucrt/include/cairo /ID:/APPL/ucrt/include/freetype2 /ID:/APPL/ucrt/include/libpng16 /ID:/APPL/ucrt/include/pixman-1 /ID:/APPL/ucrt/include/graphene-1.0 /ID:/APPL/ucrt/lib/graphene-1.0/include /ID:/APPL/ucrt/include /ID:/APPL/ucrt/include/glib-2.0 /ID:/APPL/ucrt/lib/glib-2.0/include </AdditionalOptions>
       <DisableSpecificWarnings>4819</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalOptions>/libpath:D:/APPL/oss/lib gtk-4.lib pangocairo-1.0.lib gdi32.lib pangowin32-1.0.lib gdi32.lib dwrite.lib pango-1.0.lib harfbuzz.lib usp10.lib gdi32.lib rpcrt4.lib user32.lib dwrite.lib gdk_pixbuf-2.0.lib intl.lib cairo-gobject.lib gdi32.lib msimg32.lib dwrite.lib d2d1.lib windowscodecs.lib cairo.lib gdi32.lib msimg32.lib dwrite.lib d2d1.lib windowscodecs.lib graphene-1.0.lib gio-2.0.lib intl.lib shlwapi.lib dnsapi.lib iphlpapi.lib ws2_32.lib gobject-2.0.lib glib-2.0.lib intl.lib ws2_32.lib winmm.lib sqlite3.lib zip.lib advapi32.lib bcrypt.lib zlib1.lib %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/libpath:D:/APPL/ucrt/bin/../lib gtk-4.lib pangocairo-1.0.lib gdi32.lib pangowin32-1.0.lib gdi32.lib dwrite.lib pango-1.0.lib harfbuzz.lib gdk_pixbuf-2.0.lib intl.lib cairo-gobject.lib gdi32.lib msimg32.lib dwrite.lib d2d1.lib windowscodecs.lib cairo.lib gdi32.lib msimg32.lib dwrite.lib d2d1.lib windowscodecs.lib graphene-1.0.lib gio-2.0.lib intl.lib shlwapi.lib dnsapi.lib iphlpapi.lib ws2_32.lib gobject-2.0.lib glib-2.0.lib intl.lib iconv.lib ws2_32.lib winmm.lib zip.lib zlib.lib sqlite3.lib </AdditionalOptions>
     </Link>
     <PreBuildEvent>
       <Command>
@@ -134,7 +134,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AdditionalOptions>/ID:/APPL/oss/include /ID:/APPL/oss/include/gtk-4.0 /ID:/APPL/oss/include/pango-1.0 /ID:/APPL/oss/include/fribidi /ID:/APPL/oss/include/harfbuzz /ID:/APPL/oss/include/gdk-pixbuf-2.0 /ID:/APPL/oss/include/cairo /ID:/APPL/oss/include/freetype2 /ID:/APPL/oss/include/libpng16 /ID:/APPL/oss/include/pixman-1 /ID:/APPL/oss/include/graphene-1.0 /ID:/APPL/oss/lib/graphene-1.0/include /ID:/APPL/oss/include /ID:/APPL/oss/include/glib-2.0 /ID:/APPL/oss/lib/glib-2.0/include %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/ID:/APPL/ucrt/include /ID:/APPL/ucrt/include/gtk-4.0 /ID:/APPL/ucrt/include/pango-1.0 /ID:/APPL/ucrt/include/fribidi /ID:/APPL/ucrt/include/harfbuzz /ID:/APPL/ucrt/include/gdk-pixbuf-2.0 /ID:/APPL/ucrt/include/cairo /ID:/APPL/ucrt/include/freetype2 /ID:/APPL/ucrt/include/libpng16 /ID:/APPL/ucrt/include/pixman-1 /ID:/APPL/ucrt/include/graphene-1.0 /ID:/APPL/ucrt/lib/graphene-1.0/include /ID:/APPL/ucrt/include /ID:/APPL/ucrt/include/glib-2.0 /ID:/APPL/ucrt/lib/glib-2.0/include </AdditionalOptions>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <FloatingPointModel>Fast</FloatingPointModel>
@@ -144,7 +144,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalOptions>/libpath:D:/APPL/oss/lib gtk-4.lib pangocairo-1.0.lib gdi32.lib pangowin32-1.0.lib gdi32.lib dwrite.lib pango-1.0.lib harfbuzz.lib usp10.lib gdi32.lib rpcrt4.lib user32.lib dwrite.lib gdk_pixbuf-2.0.lib intl.lib cairo-gobject.lib gdi32.lib msimg32.lib dwrite.lib d2d1.lib windowscodecs.lib cairo.lib gdi32.lib msimg32.lib dwrite.lib d2d1.lib windowscodecs.lib graphene-1.0.lib gio-2.0.lib intl.lib shlwapi.lib dnsapi.lib iphlpapi.lib ws2_32.lib gobject-2.0.lib glib-2.0.lib intl.lib ws2_32.lib winmm.lib sqlite3.lib zip.lib advapi32.lib bcrypt.lib zlib1.lib %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/libpath:D:/APPL/ucrt/bin/../lib gtk-4.lib pangocairo-1.0.lib gdi32.lib pangowin32-1.0.lib gdi32.lib dwrite.lib pango-1.0.lib harfbuzz.lib gdk_pixbuf-2.0.lib intl.lib cairo-gobject.lib gdi32.lib msimg32.lib dwrite.lib d2d1.lib windowscodecs.lib cairo.lib gdi32.lib msimg32.lib dwrite.lib d2d1.lib windowscodecs.lib graphene-1.0.lib gio-2.0.lib intl.lib shlwapi.lib dnsapi.lib iphlpapi.lib ws2_32.lib gobject-2.0.lib glib-2.0.lib intl.lib iconv.lib ws2_32.lib winmm.lib zip.lib zlib.lib sqlite3.lib </AdditionalOptions>
     </Link>
     <PreBuildEvent>
       <Command>
@@ -188,7 +188,10 @@
     <None Include="data\style.css" />
   </ItemGroup>
   <ItemGroup>
+    <Text Include="data\lang\es.txt" />
+    <Text Include="data\lang\ja.txt" />
     <Text Include="data\lang\ko.txt" />
+    <Text Include="data\lang\zh.txt" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="data\icon\directory.png" />

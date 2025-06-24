@@ -112,6 +112,15 @@
     <Text Include="data\lang\ko.txt">
       <Filter>자료\lang</Filter>
     </Text>
+    <Text Include="data\lang\es.txt">
+      <Filter>자료\lang</Filter>
+    </Text>
+    <Text Include="data\lang\ja.txt">
+      <Filter>자료\lang</Filter>
+    </Text>
+    <Text Include="data\lang\zh.txt">
+      <Filter>자료\lang</Filter>
+    </Text>
   </ItemGroup>
   <ItemGroup>
     <Image Include="data\icon\directory.png">

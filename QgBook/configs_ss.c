@@ -66,6 +66,7 @@ ShortcutDefinition shortcut_defs[] =
 	{"scan_book_random", "backslash"}, ///< 랜덤 책(\)
 
 	// 보기/정렬
+	{"view_zoom_toggle", "z"}, ///< 보기 확대/축소(z)
 	{"view_mode_left_right", "Tab"}, ///< 좌우 보기 모드 전환(Tab)
 	{"view_align_center", "<Control>End"}, ///< 가운데 정렬(Ctrl+End)
 	{"view_align_left", "<Control>Delete"}, ///< 왼쪽 정렬(Ctrl+Delete)

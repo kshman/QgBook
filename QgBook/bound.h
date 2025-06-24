@@ -69,7 +69,7 @@ static inline BoundSize bound_size(int width, int height)
 }
 
 #define BOUND_RECT_TO_GRAPHENE_RECT(rt) \
-	GRAPHENE_RECT_INIT((rt)->left, (rt)->top, bound_rect_width(rt), bound_rect_height(rt))
+	GRAPHENE_RECT_INIT((float)(rt)->left, (float)(rt)->top, (float)bound_rect_width(rt), (float)bound_rect_height(rt))
 
 
 // 대상 사각형을 계산합니다
@@ -113,7 +113,9 @@ static inline BoundSize bound_size_calc_dest(bool zoom, int dw, int dh, int sw, 
 	else
 	{
 		// 항상 너비 기준으로 맞춤
-		nh = (int)(dw / src_aspect);
+		//nh = (int)(dw / src_aspect);
+		nw = sw;
+		nh = sh;
 	}
 
 	return (BoundSize){nw, nh};

@@ -82,6 +82,8 @@ extern void book_base_dispose(Book* book);
  */
 extern GdkTexture* book_read_page(Book* book, int page);
 
+extern bool book_read_anim(Book* book, int page, GdkTexture** out_texture, GdkPixbufAnimation** out_animation);
+
 /**
  * @brief 다음 페이지(또는 쌍페이지)로 이동합니다.
  * @param book Book 객체 포인터
