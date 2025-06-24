@@ -97,55 +97,31 @@ pos_return_no_image:
 /**
  * @brief 다음 페이지(또는 쌍페이지)로 이동합니다.
  * @param book Book 객체 포인터
- * @param mode 페이지 넘김 모드(ViewMode)
+ * @param page_count 페이지 갯수
  * @return 실제로 페이지가 바뀌었으면 true, 아니면 false
  */
-bool book_move_next(Book* book, ViewMode mode)
+bool book_move_next(Book* book, int page_count)
 {
-	int prev = book->cur_page;
-	switch (mode)  // NOLINT(clang-diagnostic-switch-enum)
-	{
-		case VIEW_MODE_FIT:
-			if (book->cur_page + 1 < book->total_page)
-				book->cur_page++;
-			break;
-		case VIEW_MODE_LEFT_TO_RIGHT:
-		case VIEW_MODE_RIGHT_TO_LEFT:
-			if (book->cur_page + 2 < book->total_page)
-				book->cur_page += 2;
-			break;
-		default:
-			// 잘못된 모드: 프로그램 비정상 종료
-			abort();
-	}
-	return prev != book->cur_page; // 페이지가 바뀌었으면 true 반환
+	const int save = book->cur_page;
+	const int next = save + page_count;
+	if (next < book->total_page)
+		book->cur_page = next;
+	return save != book->cur_page; // 페이지가 바뀌었으면 true 반환
 }
 
 /**
  * @brief 이전 페이지(또는 쌍페이지)로 이동합니다.
  * @param book Book 객체 포인터
- * @param mode 페이지 넘김 모드(ViewMode)
+ * @param page_count 페이지 갯수
  * @return 실제로 페이지가 바뀌었으면 true, 아니면 false
  */
-bool book_move_prev(Book* book, ViewMode mode)
+bool book_move_prev(Book* book, int page_count)
 {
-	int prev = book->cur_page;
-	switch (mode)  // NOLINT(clang-diagnostic-switch-enum)
-	{
-		case VIEW_MODE_FIT:
-			book->cur_page--;
-			break;
-		case VIEW_MODE_LEFT_TO_RIGHT:
-		case VIEW_MODE_RIGHT_TO_LEFT:
-			book->cur_page -= 2;
-			break;
-		default:
-			// 잘못된 모드: 프로그램 비정상 종료
-			abort();
-	}
+	const int save = book->cur_page;
+	book->cur_page -= page_count;
 	if (book->cur_page < 0)
 		book->cur_page = 0; // 페이지가 0보다 작아지면 0으로 고정
-	return prev != book->cur_page; // 페이지가 바뀌었으면 true 반환
+	return save != book->cur_page; // 페이지가 바뀌었으면 true 반환
 }
 
 /**

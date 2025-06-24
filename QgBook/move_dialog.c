@@ -364,7 +364,11 @@ static MoveDialog* move_dialog_new(GtkWindow* parent)
 	gtk_window_set_transient_for(self->window, parent);
 	gtk_window_set_title(self->window, _("Move book"));
 	gtk_window_set_modal(self->window, TRUE);
+#ifdef _WIN32
+	gtk_window_set_default_size(self->window, 500, 650);
+#else
 	gtk_window_set_default_size(self->window, 500, 600);
+#endif
 	g_signal_connect(self->window, "destroy", G_CALLBACK(signal_destroy), self);
 
 	// 콘텐츠 영역
