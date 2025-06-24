@@ -42,7 +42,7 @@ static inline int bound_rect_height(const BoundRect* r)
 	return r->bottom - r->top;
 }
 
-static inline BoundRect bound_rect_move(const BoundRect* r, int dx, int dy)
+static inline BoundRect bound_rect_delta(const BoundRect* r, int dx, int dy)
 {
 	return (BoundRect){
 		r->left + dx, r->top + dy,
@@ -75,60 +75,44 @@ static inline BoundSize bound_size(int width, int height)
 // 대상 사각형을 계산합니다
 static inline BoundRect bound_rect_calc_rect(HorizAlign align, int tw, int th, int dw, int dh)
 {
-	BoundRect rt = {0, 0, dw, dh};
-	if (align == HORIZ_ALIGN_LEFT)
-	{
-		// 왼쪽 정렬
-		// ..은 할게 없다
-	}
-	else
-	{
-		// 오른쪽 + 가운데 정렬
-		if (dw < tw)
-		{
-			rt.left = tw - dw;
+	int left = 0, top = 0;
 
-			// 가운데
-			if (align == HORIZ_ALIGN_CENTER)
-				rt.left /= 2;
-		}
-	}
-	if (dh < th)
-		rt.top = (th - dh) / 2;
-	rt.right += rt.left;
-	rt.bottom += rt.top;
-	return rt;
+	// 가로 정렬
+	if (align == HORIZ_ALIGN_RIGHT)
+		left = tw > dw ? tw - dw : 0;
+	else if (align == HORIZ_ALIGN_CENTER)
+		left = tw > dw ? (tw - dw) / 2 : 0;
+
+	// 세로 정렬(항상 중앙)
+	if (th > dh)
+		top = (th - dh) / 2;
+
+	return bound_rect(left, top, dw, dh);
 }
 
 // 원본과 대상의 크기 및 확대 여부에 따라 최적의 크기를 계산합니다
 static inline BoundSize bound_size_calc_dest(bool zoom, int dw, int dh, int sw, int sh)
 {
-	const double dst_aspect = dw / (double)dh;
-	const double src_aspect = sw / (double)sh;
+	double src_aspect = sw / (double)sh;
+	double dst_aspect = dw / (double)dh;
 	int nw = dw, nh = dh;
 
 	if (zoom)
 	{
-		if (src_aspect > 1)
+		if (src_aspect > dst_aspect)
 		{
-			// 세로로 긴 그림
-			if (dst_aspect < src_aspect)
-				nh = (int)(dw / src_aspect);
-			else
-				nw = (int)(dh * src_aspect);
+			// 원본이 더 가로로 김: 너비를 맞추고 높이 조정
+			nh = (int)(dw / src_aspect);
 		}
 		else
 		{
-			// 가로로 긴 그림
-			if (dst_aspect > src_aspect)
-				nw = (int)(dh * src_aspect);
-			else
-				nh = (int)(dw / src_aspect);
+			// 원본이 더 세로로 김: 높이를 맞추고 너비 조정
+			nw = (int)(dh * src_aspect);
 		}
 	}
 	else
 	{
-		// 가로로 맞춘다... 스크롤은 쌩깜
+		// 항상 너비 기준으로 맞춤
 		nh = (int)(dw / src_aspect);
 	}
 

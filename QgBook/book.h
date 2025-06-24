@@ -85,18 +85,18 @@ extern GdkTexture* book_read_page(Book* book, int page);
 /**
  * @brief 다음 페이지(또는 쌍페이지)로 이동합니다.
  * @param book Book 객체 포인터
- * @param mode 페이지 넘김 모드(ViewMode)
+ * @param page_count 페이지 갯수
  * @return 실제로 페이지가 바뀌었으면 true, 아니면 false
  */
-extern bool book_move_next(Book* book, ViewMode mode);
+extern bool book_move_next(Book* book, int page_count);
 
 /**
  * @brief 이전 페이지(또는 쌍페이지)로 이동합니다.
  * @param book Book 객체 포인터
- * @param mode 페이지 넘김 모드(ViewMode)
+ * @param page_count 페이지 갯수
  * @return 실제로 페이지가 바뀌었으면 true, 아니면 false
  */
-extern bool book_move_prev(Book* book, ViewMode mode);
+extern bool book_move_prev(Book* book, int page_count);
 
 /**
  * @brief 지정한 페이지로 이동합니다.

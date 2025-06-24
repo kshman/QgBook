@@ -100,11 +100,8 @@ struct ReadWindow
 	PangoFontDescription* notify_font;
 
 	// 책 상태
-	bool view_zoom;
-	ViewMode view_mode;
-	ViewQuality view_quality;
 	HorizAlign view_align;
-	int view_margin;
+	int view_pages;
 
 	// 책
 	Book* book;
@@ -178,13 +175,11 @@ static void toggle_fullscreen(ReadWindow* self)
 // 늘려보기 설정과 메뉴 처리
 static void update_view_zoom(ReadWindow* self, bool zoom)
 {
-	if (self->view_zoom == zoom)
+	if (config_get_bool(CONFIG_VIEW_ZOOM, true) == zoom)
 		return;
 
-	self->view_zoom = zoom;
-	config_set_bool(CONFIG_VIEW_ZOOM, zoom, false);
-
 	gtk_check_button_set_active(GTK_CHECK_BUTTON(self->menu_zoom_check), zoom);
+	config_set_bool(CONFIG_VIEW_ZOOM, zoom, false);
 
 	queue_draw_book(self);
 }
@@ -192,15 +187,13 @@ static void update_view_zoom(ReadWindow* self, bool zoom)
 // 읽기 방향 설정과 메뉴 처리
 static void update_view_mode(ReadWindow* self, ViewMode mode)
 {
-	if (self->view_mode == mode)
+	if (config_get_int(CONFIG_VIEW_MODE, true) == mode)
 		return;
-
-	self->view_mode = mode;
-	config_set_int(CONFIG_VIEW_MODE, mode, false);
 
 	GdkPaintable* paintable = GDK_PAINTABLE(res_get_view_mode_texture(mode));
 	gtk_image_set_from_paintable(GTK_IMAGE(self->menu_vmode_image), paintable);
 	gtk_check_button_set_active(GTK_CHECK_BUTTON(self->menu_vmode_radios[mode]), true);
+	config_set_int(CONFIG_VIEW_MODE, mode, false);
 
 	// 책 준비
 	queue_draw_book(self);
@@ -209,13 +202,11 @@ static void update_view_mode(ReadWindow* self, ViewMode mode)
 // 보기 품질 설정과 메뉴 처리
 static void update_view_quality(ReadWindow* self, ViewQuality quality)
 {
-	if (self->view_quality == quality)
+	if (config_get_int(CONFIG_VIEW_QUALITY, true) == quality)
 		return;
 
-	self->view_quality = quality;
-	config_set_int(CONFIG_VIEW_QUALITY, quality, false);
-
 	gtk_check_button_set_active(GTK_CHECK_BUTTON(self->menu_vquality_radios[quality]), true);
+	config_set_int(CONFIG_VIEW_QUALITY, quality, false);
 
 	queue_draw_book(self);
 }
@@ -227,9 +218,8 @@ static void update_view_align(ReadWindow* self, HorizAlign align)
 	if (self->view_align == align)
 		return;
 
-	self->view_align = align;
-
 	gtk_check_button_set_active(GTK_CHECK_BUTTON(self->menu_valign_radios[align]), true);
+	self->view_align = align;
 
 	queue_draw_book(self);
 }
@@ -237,13 +227,11 @@ static void update_view_align(ReadWindow* self, HorizAlign align)
 // 보기 여백 설정과 메뉴 처리
 static void update_view_margin(ReadWindow* self, int margin)
 {
-	if (self->view_margin == margin)
+	if (config_get_int(CONFIG_VIEW_MARGIN, true) == margin)
 		return;
 
-	self->view_margin = margin;
-	config_set_int(CONFIG_VIEW_MARGIN, margin, false);
-
 	gtk_spin_button_set_value(GTK_SPIN_BUTTON(self->menu_vmargin_spin), margin);
+	config_set_int(CONFIG_VIEW_MARGIN, margin, false);
 
 	queue_draw_book(self);
 }
@@ -433,11 +421,13 @@ static void prepare_page(ReadWindow* self)
 
 	// 캐시를 어기에 넣어야 하나?
 
-	switch (self->view_mode) // NOLINT(clang-diagnostic-switch-enum)
+	const ViewMode mode = (ViewMode)config_get_int(CONFIG_VIEW_MODE, true);
+	switch (mode) // NOLINT(clang-diagnostic-switch-enum)
 	{
 		case VIEW_MODE_FIT:
 			self->page_left = book_read_page(self->book, cur);
 			self->page_right = NULL;
+			self->view_pages = 1;
 			break;
 
 		case VIEW_MODE_LEFT_TO_RIGHT:
@@ -471,6 +461,7 @@ static void prepare_page(ReadWindow* self)
 
 			self->page_left = l;
 			self->page_right = r;
+			self->view_pages = (l ? 1 : 0) + (r ? 1 : 0);
 			break;
 		}
 
@@ -488,12 +479,12 @@ static void page_control(ReadWindow* self, BookControl c)
 	switch (c) // NOLINT(clang-diagnostic-switch-enum)
 	{
 		case BOOK_CTRL_PREV:
-			if (!book_move_prev(self->book, self->view_mode))
+			if (!book_move_prev(self->book, self->view_pages))
 				return;
 			break;
 
 		case BOOK_CTRL_NEXT:
-			if (!book_move_next(self->book, self->view_mode))
+			if (!book_move_next(self->book, self->view_pages))
 				return;
 			break;
 
@@ -823,12 +814,13 @@ static void menu_view_zoom_toggled(GtkCheckButton* button, ReadWindow* self)
 // 보기 모드 누르기
 static void menu_view_mode_clicked(GtkButton* button, ReadWindow* self)
 {
+	const ViewMode cur = (ViewMode)config_get_int(CONFIG_VIEW_MODE, true);
 	const ViewMode mode =
-			self->view_mode == VIEW_MODE_FIT
+			cur == VIEW_MODE_FIT
 				? VIEW_MODE_LEFT_TO_RIGHT
-				: self->view_mode == VIEW_MODE_LEFT_TO_RIGHT
+				: cur == VIEW_MODE_LEFT_TO_RIGHT
 					  ? VIEW_MODE_RIGHT_TO_LEFT
-					  : /*self->view_mode == VIEW_MODE_RIGHT_TO_LEFT ? VIEW_MODE_FIT :*/ VIEW_MODE_FIT;
+					  : /*cur == VIEW_MODE_RIGHT_TO_LEFT ? VIEW_MODE_FIT :*/ VIEW_MODE_FIT;
 	update_view_mode(self, mode);
 }
 
@@ -1219,9 +1211,13 @@ static void shortcut_scan_book_random(ReadWindow* self)
 // 단축키 - 읽기 방향 왼쪽/오른쪽 전환
 static void shortcut_view_mode_left_right(ReadWindow* self)
 {
-	if (self->view_mode == VIEW_MODE_FIT)
-		return; // 맞춰 읽을 때는 방향 전환 안함
-	ViewMode mode = self->view_mode == VIEW_MODE_LEFT_TO_RIGHT ? VIEW_MODE_RIGHT_TO_LEFT : VIEW_MODE_LEFT_TO_RIGHT;
+	const ViewMode cur = (ViewMode)config_get_int(CONFIG_VIEW_MODE, true);
+	const ViewMode mode =
+			cur == VIEW_MODE_FIT
+				? VIEW_MODE_LEFT_TO_RIGHT
+				: cur == VIEW_MODE_LEFT_TO_RIGHT
+					  ? VIEW_MODE_RIGHT_TO_LEFT
+					  : VIEW_MODE_LEFT_TO_RIGHT;
 	update_view_mode(self, mode);
 }
 
@@ -1248,6 +1244,18 @@ static void shortcut_view_align_right(ReadWindow* self)
 		return; // 이미 오른쪽 정렬이면 안함
 	update_view_align(self, HORIZ_ALIGN_RIGHT);
 }
+
+// 단축키 - 보기 정렬 순서대로 바꾸기
+static void shortcut_view_align_toggle(ReadWindow* self)
+{
+	const HorizAlign align =
+			self->view_align == HORIZ_ALIGN_CENTER
+				? HORIZ_ALIGN_RIGHT
+				: self->view_align == HORIZ_ALIGN_RIGHT
+					  ? HORIZ_ALIGN_LEFT
+					  : HORIZ_ALIGN_CENTER;
+	update_view_align(self, align);
+}
 #pragma endregion
 
 #pragma region 스냅샷 그리기
@@ -1257,9 +1265,23 @@ static void paint_page_fit(ReadWindow* self, GtkSnapshot* snapshot, GdkTexture* 
 	g_return_if_fail(texture != NULL);
 
 	const BoundSize ns = bound_size_calc_dest(
-			self->view_zoom, width, height,
+			config_get_bool(CONFIG_VIEW_ZOOM, true), width, height,
 			gdk_texture_get_width(texture), gdk_texture_get_height(texture));
-	const BoundRect rt = bound_rect_calc_rect(HORIZ_ALIGN_CENTER, width, height, ns.width, ns.height);
+	BoundRect rt = bound_rect_calc_rect(HORIZ_ALIGN_CENTER, width, height, ns.width, ns.height);
+
+	// 마진 적용
+	if (self->view_align == HORIZ_ALIGN_LEFT)
+	{
+		const int w = bound_rect_width(&rt);
+		rt.left = config_get_int(CONFIG_VIEW_MARGIN, true);
+		rt.right = rt.left + w;
+	}
+	else if (self->view_align == HORIZ_ALIGN_RIGHT)
+	{
+		const int w = bound_rect_width(&rt);
+		rt.right = width - config_get_int(CONFIG_VIEW_MARGIN, true);
+		rt.left = rt.right - w;
+	}
 
 	gtk_snapshot_append_texture(snapshot, texture, &BOUND_RECT_TO_GRAPHENE_RECT(&rt));
 }
@@ -1274,29 +1296,31 @@ static void paint_page_dual(
 	g_return_if_fail(right != NULL);
 
 	const int half = width / 2;
+	const bool zoom = config_get_bool(CONFIG_VIEW_ZOOM, true);
 
 	// 왼쪽 페이지
 	const BoundSize ls = bound_size_calc_dest(
-			self->view_zoom, half, height,
+			zoom, half, height,
 			gdk_texture_get_width(left), gdk_texture_get_height(left));
 	BoundRect lb = bound_rect_calc_rect(HORIZ_ALIGN_RIGHT, half, height, ls.width, ls.height);
 
 	// 오른쪽 페이지
 	const BoundSize rs = bound_size_calc_dest(
-			self->view_zoom, half, height,
+			zoom, half, height,
 			gdk_texture_get_width(right), gdk_texture_get_height(right));
 	const BoundRect ro = bound_rect_calc_rect(HORIZ_ALIGN_LEFT, half, height, rs.width, rs.height);
-	BoundRect rb = bound_rect_move(&ro, half, 0);
+	BoundRect rb = bound_rect_delta(&ro, half, 0);
 
 	// 가로 정렬
 	if (self->view_align != HORIZ_ALIGN_CENTER)
 	{
 		const int lw = bound_rect_width(&lb);
 		const int rw = bound_rect_width(&rb);
+		const int margin = config_get_int(CONFIG_VIEW_MARGIN, true);
 		if (self->view_align == HORIZ_ALIGN_LEFT)
 		{
 			// 왼쪽 페이지를 margin만큼 왼쪽에 붙임
-			lb.left = self->view_margin;
+			lb.left = margin;
 			lb.right = lb.left + lw;
 			// 오른쪽 페이지는 왼쪽 페이지 오른쪽에 바로 붙임
 			rb.left = lb.right;
@@ -1305,7 +1329,7 @@ static void paint_page_dual(
 		else if (self->view_align == HORIZ_ALIGN_RIGHT)
 		{
 			// 오른쪽 페이지를 오른쪽 끝에서 margin만큼 떨어뜨림
-			rb.left = width - self->view_margin - rw;
+			rb.left = width - margin - rw;
 			rb.right = rb.left + rw;
 			// 왼쪽 페이지는 오른쪽 페이지 왼쪽에 바로 붙임
 			lb.left = rb.left - lw;
@@ -1326,18 +1350,27 @@ static void paint_book(ReadWindow* self, GtkSnapshot* snapshot, int width, int h
 
 	// book_read_page에서 이미지가 없으면 no_image를 반환하므로 그냥 그리면 된다구요
 
-	if (self->view_mode == VIEW_MODE_FIT)
+	if (self->view_pages == 1)
 	{
 		// 한장만 그리기
 		GdkTexture* tex = self->page_left ? self->page_left : self->page_right;
 		paint_page_fit(self, snapshot, tex, width, height);
 	}
-	else if (self->view_mode == VIEW_MODE_LEFT_TO_RIGHT || self->view_mode == VIEW_MODE_RIGHT_TO_LEFT)
+	else if (self->view_pages == 2)
 	{
+		ViewMode mode = (ViewMode)config_get_int(CONFIG_VIEW_MODE, true);
+		if (mode != VIEW_MODE_LEFT_TO_RIGHT && mode != VIEW_MODE_RIGHT_TO_LEFT)
+		{
+			// 뭐라고? 두장 그려야 하는데 모드가 왼쪽에서 오른쪽도 아니고 오른쪽에서 왼쪽도 아니라고?
+			//g_assert_not_reached(); // 잘못된 페이지 개수
+			// assert 하지말고 그냥 기본값인 왼쪽에서 오른쪽으로 그리자
+			mode = VIEW_MODE_LEFT_TO_RIGHT;
+		}
+
 		// 두장 그리기
 		GdkTexture* l;
 		GdkTexture* r;
-		if (self->view_mode == VIEW_MODE_LEFT_TO_RIGHT)
+		if (mode == VIEW_MODE_LEFT_TO_RIGHT)
 		{
 			l = self->page_left;
 			r = self->page_right;
@@ -1371,6 +1404,11 @@ static void paint_book(ReadWindow* self, GtkSnapshot* snapshot, int width, int h
 			paint_page_fit(self, snapshot, no_image, width, height);
 			// g_object_unref(no_image); // 이거 하면 안된다
 		}
+	}
+	else
+	{
+		// 뭐라고? 페이지개수가 1도 아니고 2도 아니라고?
+		g_assert_not_reached(); // 잘못된 페이지 개수
 	}
 }
 
@@ -1418,8 +1456,8 @@ static void paint_notify(ReadWindow* self, GtkSnapshot* s, int width, int height
 
 	if (texture)
 	{
-		float x = (width - tex_w) / 2.0f;
-		float y = (height - tex_h) / 2.0f;
+		const float x = (float)(width - tex_w) / 2.0f;
+		const float y = (float)(height - tex_h) / 2.0f;
 		gtk_snapshot_append_texture(s, texture, &GRAPHENE_RECT_INIT(x, y, (float)tex_w, (float)tex_h));
 		g_object_unref(texture);
 	}
@@ -1430,8 +1468,8 @@ static void read_draw_snapshot(GtkWidget* widget, GtkSnapshot* snapshot)
 {
 	ReadDraw* draw = (ReadDraw*)widget;
 	ReadWindow* self = draw->read_window;
-	int width = gtk_widget_get_width(widget);
-	int height = gtk_widget_get_height(widget);
+	const int width = gtk_widget_get_width(widget);
+	const int height = gtk_widget_get_height(widget);
 
 	// 배경
 	const GdkRGBA red = {0.1f, 0.1f, 0.1f, 1.0f};
@@ -1453,7 +1491,7 @@ static void read_draw_snapshot(GtkWidget* widget, GtkSnapshot* snapshot)
 	{
 		const int lw = gdk_texture_get_width(logo);
 		const int lh = gdk_texture_get_height(logo);
-		const int x = width - lw - 100;
+		const int x = width - lw - 50;
 		const int y = width > lh ? height - lh - 50 : 10;
 		gtk_snapshot_append_texture(snapshot, logo, &GRAPHENE_RECT_INIT(x, y, lw, lh));
 	}
@@ -1473,10 +1511,10 @@ ReadWindow *read_window_new(GtkApplication* app)
 	ReadWindow* self = g_new0(ReadWindow, 1);
 
 	// 첨에 UI 설정할 때 중복 호출 방지
-	self->view_zoom = config_get_bool(CONFIG_VIEW_ZOOM, true);
-	self->view_mode = (ViewMode)config_get_int(CONFIG_VIEW_MODE, true);
-	self->view_quality = (ViewQuality)config_get_int(CONFIG_VIEW_QUALITY, true);
-	self->view_margin = config_get_int(CONFIG_VIEW_MARGIN, true);
+	bool view_zoom = config_get_bool(CONFIG_VIEW_ZOOM, true);
+	ViewMode view_mode = (ViewMode)config_get_int(CONFIG_VIEW_MODE, true);
+	ViewQuality view_quality = (ViewQuality)config_get_int(CONFIG_VIEW_QUALITY, true);
+	int view_margin = config_get_int(CONFIG_VIEW_MARGIN, true);
 
 	const int width = config_get_int(CONFIG_WINDOW_WIDTH, true);
 	const int height = config_get_int(CONFIG_WINDOW_HEIGHT, true);
@@ -1537,7 +1575,7 @@ ReadWindow *read_window_new(GtkApplication* app)
 
 	// 보기 메뉴 - 늘려 보기
 	self->menu_zoom_check = gtk_check_button_new_with_label(_("Zoom"));
-	gtk_check_button_set_active(GTK_CHECK_BUTTON(self->menu_zoom_check), self->view_zoom);
+	gtk_check_button_set_active(GTK_CHECK_BUTTON(self->menu_zoom_check), view_zoom);
 	g_signal_connect(self->menu_zoom_check, "toggled", G_CALLBACK(menu_view_zoom_toggled), self);
 	gtk_box_append(GTK_BOX(menu_box), self->menu_zoom_check);
 
@@ -1563,7 +1601,7 @@ ReadWindow *read_window_new(GtkApplication* app)
 			gtk_check_button_set_group(GTK_CHECK_BUTTON(r), GTK_CHECK_BUTTON(self->menu_vmode_radios[0]));
 		gtk_box_append(GTK_BOX(menu_box), self->menu_vmode_radios[i] = r);
 	}
-	gtk_check_button_set_active(GTK_CHECK_BUTTON(self->menu_vmode_radios[self->view_mode]), true);
+	gtk_check_button_set_active(GTK_CHECK_BUTTON(self->menu_vmode_radios[view_mode]), true);
 
 	gtk_box_append(GTK_BOX(menu_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
@@ -1589,7 +1627,7 @@ ReadWindow *read_window_new(GtkApplication* app)
 			gtk_check_button_set_group(GTK_CHECK_BUTTON(r), GTK_CHECK_BUTTON(self->menu_vquality_radios[0]));
 		gtk_box_append(GTK_BOX(menu_box), self->menu_vquality_radios[i] = r);
 	}
-	gtk_check_button_set_active(GTK_CHECK_BUTTON(self->menu_vquality_radios[self->view_quality]), true);
+	gtk_check_button_set_active(GTK_CHECK_BUTTON(self->menu_vquality_radios[view_quality]), true);
 
 	gtk_box_append(GTK_BOX(menu_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
@@ -1628,11 +1666,11 @@ ReadWindow *read_window_new(GtkApplication* app)
 		max_margin = (max_margin / 50) * 50; // 50 단위로 맞추기
 	}
 
-	if (self->view_margin > max_margin)
-		self->view_margin = max_margin; // 설정값이 너무 크면 최대값으로 제한
+	if (view_margin > max_margin)
+		view_margin = max_margin; // 설정값이 너무 크면 최대값으로 제한
 
 	self->menu_vmargin_spin = gtk_spin_button_new_with_range(0, max_margin, 50);
-	gtk_spin_button_set_value(GTK_SPIN_BUTTON(self->menu_vmargin_spin), self->view_margin);
+	gtk_spin_button_set_value(GTK_SPIN_BUTTON(self->menu_vmargin_spin), view_margin);
 	g_signal_connect(self->menu_vmargin_spin, "value-changed", G_CALLBACK(menu_view_margin_changed), self);
 	gtk_box_append(GTK_BOX(menu_box), self->menu_vmargin_spin);
 
@@ -1643,7 +1681,7 @@ ReadWindow *read_window_new(GtkApplication* app)
 	GtkWidget* header = gtk_header_bar_new();
 
 	// 헤더바 - 보기 모드 버튼 + 이미지
-	self->menu_vmode_image = gtk_image_new_from_paintable(GDK_PAINTABLE(res_get_view_mode_texture(self->view_mode)));
+	self->menu_vmode_image = gtk_image_new_from_paintable(GDK_PAINTABLE(res_get_view_mode_texture(view_mode)));
 	gtk_image_set_pixel_size(GTK_IMAGE(self->menu_vmode_image), 24);
 
 	GtkWidget* menu_mode_button = gtk_button_new();
@@ -1760,6 +1798,7 @@ ReadWindow *read_window_new(GtkApplication* app)
 				{"view_align_center", shortcut_view_align_center},
 				{"view_align_left", shortcut_view_align_left},
 				{"view_align_right", shortcut_view_align_right},
+				{"view_align_toggle", shortcut_view_align_toggle},
 				// 여기까지
 				{NULL, NULL}
 			};
