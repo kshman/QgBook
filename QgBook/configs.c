@@ -955,7 +955,7 @@ void movloc_commit(void)
 			sql_error(db, true);
 			return;
 		}
-		sqlite3_bind_int(stmt, 1, i);
+		sqlite3_bind_int(stmt, 1, (int)i);
 		sqlite3_bind_text(stmt, 2, p->alias, -1, SQLITE_STATIC);
 		sqlite3_bind_text(stmt, 3, p->folder, -1, SQLITE_STATIC);
 
