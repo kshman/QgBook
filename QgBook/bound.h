@@ -5,8 +5,8 @@
 // 사각형
 typedef struct BoundRect
 {
-	int left, top;		// 왼쪽, 위쪽 좌표
-	int right, bottom;	// 오른쪽, 아래쪽 좌표
+	int left, top; // 왼쪽, 위쪽 좌표
+	int right, bottom; // 오른쪽, 아래쪽 좌표
 } BoundRect;
 
 // 점
@@ -24,12 +24,12 @@ typedef struct BoundSize
 
 static inline BoundRect bound_rect(int x, int y, int width, int height)
 {
-	return (BoundRect) { x, y, x + width, y + height };
+	return (BoundRect){x, y, x + width, y + height};
 }
 
 static inline BoundRect bound_rect_init(int left, int top, int right, int bottom)
 {
-	return (BoundRect) { left, top, right, bottom };
+	return (BoundRect){left, top, right, bottom};
 }
 
 static inline int bound_rect_width(const BoundRect* r)
@@ -42,21 +42,40 @@ static inline int bound_rect_height(const BoundRect* r)
 	return r->bottom - r->top;
 }
 
+static inline BoundRect bound_rect_move(const BoundRect* r, int dx, int dy)
+{
+	return (BoundRect){
+		r->left + dx, r->top + dy,
+		r->right + dx, r->bottom + dy
+	};
+}
+
+static inline BoundRect bound_rect_inflate(const BoundRect* r, int dx, int dy)
+{
+	return (BoundRect){
+		r->left - dx, r->top - dy,
+		r->right + dx, r->bottom + dy
+	};
+}
+
 static inline BoundPoint bound_point(int x, int y)
 {
-	return (BoundPoint) { x, y };
+	return (BoundPoint){x, y};
 }
 
 static inline BoundSize bound_size(int width, int height)
 {
-	return (BoundSize) { width, height };
+	return (BoundSize){width, height};
 }
+
+#define BOUND_RECT_TO_GRAPHENE_RECT(rt) \
+	GRAPHENE_RECT_INIT((rt)->left, (rt)->top, bound_rect_width(rt), bound_rect_height(rt))
 
 
 // 대상 사각형을 계산합니다
-static inline BoundRect bound_rect_calc_rect(HorizAlign align, const BoundSize target, const BoundSize dest)
+static inline BoundRect bound_rect_calc_rect(HorizAlign align, int tw, int th, int dw, int dh)
 {
-	BoundRect r = { 0, 0, dest.width, dest.height };
+	BoundRect rt = {0, 0, dw, dh};
 	if (align == HORIZ_ALIGN_LEFT)
 	{
 		// 왼쪽 정렬
@@ -65,62 +84,53 @@ static inline BoundRect bound_rect_calc_rect(HorizAlign align, const BoundSize t
 	else
 	{
 		// 오른쪽 + 가운데 정렬
-		if (dest.width < target.width)
+		if (dw < tw)
 		{
-			r.left = target.width - dest.width;
-			// 가운데 정렬
+			rt.left = tw - dw;
+
+			// 가운데
 			if (align == HORIZ_ALIGN_CENTER)
-				r.left /= 2;
+				rt.left /= 2;
 		}
 	}
-	if (dest.height < target.height)
-		r.top = (target.height - dest.height) / 2; // 세로는 항상 가운데 정렬
-	return r;
+	if (dh < th)
+		rt.top = (th - dh) / 2;
+	rt.right += rt.left;
+	rt.bottom += rt.top;
+	return rt;
 }
 
 // 원본과 대상의 크기 및 확대 여부에 따라 최적의 크기를 계산합니다
-static inline BoundSize bound_size_calc_optimal(bool zoom, const BoundSize dest, const BoundSize src)
+static inline BoundSize bound_size_calc_dest(bool zoom, int dw, int dh, int sw, int sh)
 {
-	const double src_aspect = src.width / (double)src.height;
-	const double dst_aspect = dest.width / (double)dest.height;
-	int nw = dest.width, nh = dest.height;
+	const double dst_aspect = dw / (double)dh;
+	const double src_aspect = sw / (double)sh;
+	int nw = dw, nh = dh;
+
 	if (zoom)
 	{
-		// 확대 모드
-		if (src_aspect > 1.0)
+		if (src_aspect > 1)
 		{
-			// 너비가 더 넓음
+			// 세로로 긴 그림
 			if (dst_aspect < src_aspect)
-			{
-				// 너비가 더 좁음
-				nw = (int)(dest.height / src_aspect);
-			}
+				nh = (int)(dw / src_aspect);
 			else
-			{
-				// 높이가 더 넓음
-				nh = (int)(dest.width * src_aspect);
-			}
+				nw = (int)(dh * src_aspect);
 		}
 		else
 		{
-			// 높이가 더 넓음
-			if (dst_aspect < src_aspect)
-			{
-				// 너비가 더 좁음
-				nw = (int)(dest.height / src_aspect);
-			}
+			// 가로로 긴 그림
+			if (dst_aspect > src_aspect)
+				nw = (int)(dh * src_aspect);
 			else
-			{
-				// 높이가 더 좁음
-				nh = (int)(dest.width * src_aspect);
-			}
+				nh = (int)(dw / src_aspect);
 		}
 	}
 	else
 	{
-		// 축소 모드
-		// 너비에 맞춘다
-		nh = (int)(dest.width / src_aspect);
+		// 가로로 맞춘다... 스크롤은 쌩깜
+		nh = (int)(dw / src_aspect);
 	}
-	return (BoundSize) { nw, nh };
+
+	return (BoundSize){nw, nh};
 }

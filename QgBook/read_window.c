@@ -2,6 +2,7 @@
 #include "configs.h"
 #include "book.h"
 #include "doumi.h"
+#include "bound.h"
 
 #define NOTIFY_TIMEOUT 2000
 
@@ -12,10 +13,10 @@ typedef void (*ShortcutFunc)(ReadWindow*);
 
 // 외부 함수
 extern void renex_dialog_show_async(GtkWindow* parent, const char* filename, RenameCallback callback,
-	gpointer user_data);
+									gpointer user_data);
 extern void move_dialog_show_async(GtkWindow* parent, MoveCallback callback, gpointer user_data);
 
-extern PageDialog* page_dialog_new(GtkWindow* parent, PageSelectCallback callback, gpointer user_data);
+extern PageDialog *page_dialog_new(GtkWindow* parent, PageSelectCallback callback, gpointer user_data);
 extern void page_dialog_dispose(PageDialog* self);
 extern void page_dialog_show_async(PageDialog* self, int page);
 extern void page_dialog_set_book(PageDialog* self, Book* book);
@@ -39,7 +40,7 @@ G_DEFINE_TYPE(ReadDraw, read_draw, GTK_TYPE_DRAWING_AREA)
 static void read_draw_snapshot(GtkWidget* widget, GtkSnapshot* snapshot);
 static gboolean read_draw_focus(GtkWidget* widget, GtkDirectionType direction);
 
-static GtkWidget* read_draw_new(ReadWindow* self)
+static GtkWidget *read_draw_new(ReadWindow* self)
 {
 	GtkWidget* widget = GTK_WIDGET(g_object_new(read_draw_get_type(), NULL));
 	((ReadDraw*)widget)->read_window = self;
@@ -747,10 +748,10 @@ static void signal_mouse_click(GtkGestureClick* gesture, int n_press, double x, 
 
 // 키보드 떼임
 static gboolean signal_key_released(GtkEventControllerKey* controller,
-	guint value,
-	guint code,
-	GdkModifierType state,
-	ReadWindow* self)
+									guint value,
+									guint code,
+									GdkModifierType state,
+									ReadWindow* self)
 {
 	reset_key(self);
 	return false;
@@ -758,10 +759,10 @@ static gboolean signal_key_released(GtkEventControllerKey* controller,
 
 // 키보드 눌림
 static gboolean signal_key_pressed(GtkEventControllerKey* controller,
-	guint value,
-	guint code,
-	GdkModifierType state,
-	ReadWindow* self)
+								   guint value,
+								   guint code,
+								   GdkModifierType state,
+								   ReadWindow* self)
 {
 	// 보조키는 쉬프트/컨트롤/알트/슈퍼/하이퍼/메타만 남기고 나머지는 제거
 	state &= GDK_SHIFT_MASK | GDK_CONTROL_MASK | GDK_ALT_MASK | GDK_SUPER_MASK | GDK_HYPER_MASK | GDK_META_MASK;
@@ -823,11 +824,11 @@ static void menu_view_zoom_toggled(GtkCheckButton* button, ReadWindow* self)
 static void menu_view_mode_clicked(GtkButton* button, ReadWindow* self)
 {
 	const ViewMode mode =
-		self->view_mode == VIEW_MODE_FIT
-		? VIEW_MODE_LEFT_TO_RIGHT
-		: self->view_mode == VIEW_MODE_LEFT_TO_RIGHT
-		? VIEW_MODE_RIGHT_TO_LEFT
-		: /*self->view_mode == VIEW_MODE_RIGHT_TO_LEFT ? VIEW_MODE_FIT :*/ VIEW_MODE_FIT;
+			self->view_mode == VIEW_MODE_FIT
+				? VIEW_MODE_LEFT_TO_RIGHT
+				: self->view_mode == VIEW_MODE_LEFT_TO_RIGHT
+					  ? VIEW_MODE_RIGHT_TO_LEFT
+					  : /*self->view_mode == VIEW_MODE_RIGHT_TO_LEFT ? VIEW_MODE_FIT :*/ VIEW_MODE_FIT;
 	update_view_mode(self, mode);
 }
 
@@ -1034,9 +1035,9 @@ static void shortcut_delete_book(ReadWindow* self)
 	{
 		reset_key(self); // 다이얼로그가 키 뗌을 막아버리므로 키 입력 초기화
 		doumi_mesg_yesno_show_async(
-			GTK_WINDOW(self->window),
-			_("Delete current book?"), self->book->base_name,
-			cb_delete_book_done, self);
+				GTK_WINDOW(self->window),
+				_("Delete current book?"), self->book->base_name,
+				cb_delete_book_done, self);
 	}
 	else
 	{
@@ -1251,88 +1252,74 @@ static void shortcut_view_align_right(ReadWindow* self)
 
 #pragma region 스냅샷 그리기
 // 텍스쳐를 화면에 맞게 그리기
-static void paint_page_fit(ReadWindow* self, GtkSnapshot* snapshot, GdkTexture* texture, float width, float height)
+static void paint_page_fit(ReadWindow* self, GtkSnapshot* snapshot, GdkTexture* texture, int width, int height)
 {
 	g_return_if_fail(texture != NULL);
 
-	const float tw = (float)gdk_texture_get_width(texture);
-	const float th = (float)gdk_texture_get_height(texture);
+	const BoundSize ns = bound_size_calc_dest(
+			self->view_zoom, width, height,
+			gdk_texture_get_width(texture), gdk_texture_get_height(texture));
+	const BoundRect rt = bound_rect_calc_rect(HORIZ_ALIGN_CENTER, width, height, ns.width, ns.height);
 
-	// 화면에 맞게 크기 조정
-	const float scale_x = width / tw;
-	const float scale_y = height / th;
-	const float scale = fminf(scale_x, scale_y);
-	const float draw_w = tw * scale;
-	const float draw_h = th * scale;
-
-	float x;
-	switch (self->view_align) // NOLINT(clang-diagnostic-switch-enum)
-	{
-		case HORIZ_ALIGN_CENTER:
-			x = (width - draw_w) / 2.0f;
-			break;
-		case HORIZ_ALIGN_LEFT:
-			x = (float)self->view_margin;
-			break;
-		case HORIZ_ALIGN_RIGHT:
-			x = width - draw_w - (float)self->view_margin;
-			break;
-		default:
-			g_assert_not_reached();
-	}
-	const float y = (height - draw_h) / 2.0f;
-
-	gtk_snapshot_append_texture(snapshot, texture, &GRAPHENE_RECT_INIT(x, y, draw_w, draw_h));
+	gtk_snapshot_append_texture(snapshot, texture, &BOUND_RECT_TO_GRAPHENE_RECT(&rt));
 }
 
 // 텍스쳐 두장을 나란히 화면 중앙에 붙여서 그리기 + 마진 지원
 static void paint_page_dual(
-	ReadWindow* self,
-	GtkSnapshot* snapshot,
-	GdkTexture* left, GdkTexture* right,
-	float width, float height)
+		ReadWindow* self, GtkSnapshot* snapshot,
+		GdkTexture* left, GdkTexture* right,
+		int width, int height)
 {
 	g_return_if_fail(left != NULL);
 	g_return_if_fail(right != NULL);
 
-	const float lw = (float)gdk_texture_get_width(left);
-	const float lh = (float)gdk_texture_get_height(left);
-	const float rw = (float)gdk_texture_get_width(right);
-	const float rh = (float)gdk_texture_get_height(right);
+	const int half = width / 2;
 
-	const float scale_h = height / fmaxf(lh, rh);
-	const float scale_w = width / (lw + rw);
-	const float scale = fminf(scale_h, scale_w);
+	// 왼쪽 페이지
+	const BoundSize ls = bound_size_calc_dest(
+			self->view_zoom, half, height,
+			gdk_texture_get_width(left), gdk_texture_get_height(left));
+	BoundRect lb = bound_rect_calc_rect(HORIZ_ALIGN_RIGHT, half, height, ls.width, ls.height);
 
-	const float draw_lw = lw * scale;
-	const float draw_lh = lh * scale;
-	const float draw_rw = rw * scale;
-	const float draw_rh = rh * scale;
-	const float total_w = draw_lw + draw_rw;
+	// 오른쪽 페이지
+	const BoundSize rs = bound_size_calc_dest(
+			self->view_zoom, half, height,
+			gdk_texture_get_width(right), gdk_texture_get_height(right));
+	const BoundRect ro = bound_rect_calc_rect(HORIZ_ALIGN_LEFT, half, height, rs.width, rs.height);
+	BoundRect rb = bound_rect_move(&ro, half, 0);
 
-	float x0;
-	switch (self->view_align)  // NOLINT(clang-diagnostic-switch-enum)
+	// 가로 정렬
+	if (self->view_align != HORIZ_ALIGN_CENTER)
 	{
-		case HORIZ_ALIGN_CENTER:
-			x0 = (width - total_w) / 2.0f;
-			break;
-		case HORIZ_ALIGN_LEFT:
-			x0 = (float)self->view_margin;
-			break;
-		case HORIZ_ALIGN_RIGHT:
-			x0 = width - total_w - (float)self->view_margin;
-			break;
-		default:
-			g_assert_not_reached();
+		const int lw = bound_rect_width(&lb);
+		const int rw = bound_rect_width(&rb);
+		if (self->view_align == HORIZ_ALIGN_LEFT)
+		{
+			// 왼쪽 페이지를 margin만큼 왼쪽에 붙임
+			lb.left = self->view_margin;
+			lb.right = lb.left + lw;
+			// 오른쪽 페이지는 왼쪽 페이지 오른쪽에 바로 붙임
+			rb.left = lb.right;
+			rb.right = rb.left + rw;
+		}
+		else if (self->view_align == HORIZ_ALIGN_RIGHT)
+		{
+			// 오른쪽 페이지를 오른쪽 끝에서 margin만큼 떨어뜨림
+			rb.left = width - self->view_margin - rw;
+			rb.right = rb.left + rw;
+			// 왼쪽 페이지는 오른쪽 페이지 왼쪽에 바로 붙임
+			lb.left = rb.left - lw;
+			lb.right = lb.left + lw;
+		}
 	}
-	const float y = (height - draw_lh) / 2.0f; // draw_lh == draw_rh
 
-	gtk_snapshot_append_texture(snapshot, left, &GRAPHENE_RECT_INIT(x0, y, draw_lw, draw_lh));
-	gtk_snapshot_append_texture(snapshot, right, &GRAPHENE_RECT_INIT(x0 + draw_lw, y, draw_rw, draw_rh));
+	// 그리기
+	gtk_snapshot_append_texture(snapshot, left, &BOUND_RECT_TO_GRAPHENE_RECT(&lb));
+	gtk_snapshot_append_texture(snapshot, right, &BOUND_RECT_TO_GRAPHENE_RECT(&rb));
 }
 
 // 책 그리기
-static void paint_book(ReadWindow* self, GtkSnapshot* snapshot, float width, float height)
+static void paint_book(ReadWindow* self, GtkSnapshot* snapshot, int width, int height)
 {
 	if (self->book == NULL)
 		return;
@@ -1388,7 +1375,7 @@ static void paint_book(ReadWindow* self, GtkSnapshot* snapshot, float width, flo
 }
 
 // 알림 메시지 그리기
-static void paint_notify(ReadWindow* self, GtkSnapshot* s, float width, float height)
+static void paint_notify(ReadWindow* self, GtkSnapshot* s, int width, int height)
 {
 	if (self->notify_text[0] == '\0')
 		return;
@@ -1431,8 +1418,8 @@ static void paint_notify(ReadWindow* self, GtkSnapshot* s, float width, float he
 
 	if (texture)
 	{
-		float x = (width - (float)tex_w) / 2.0f;
-		float y = (height - (float)tex_h) / 2.0f;
+		float x = (width - tex_w) / 2.0f;
+		float y = (height - tex_h) / 2.0f;
 		gtk_snapshot_append_texture(s, texture, &GRAPHENE_RECT_INIT(x, y, (float)tex_w, (float)tex_h));
 		g_object_unref(texture);
 	}
@@ -1443,11 +1430,11 @@ static void read_draw_snapshot(GtkWidget* widget, GtkSnapshot* snapshot)
 {
 	ReadDraw* draw = (ReadDraw*)widget;
 	ReadWindow* self = draw->read_window;
-	float width = (float)gtk_widget_get_width(widget);
-	float height = (float)gtk_widget_get_height(widget);
+	int width = gtk_widget_get_width(widget);
+	int height = gtk_widget_get_height(widget);
 
 	// 배경
-	const GdkRGBA red = { 0.1f, 0.1f, 0.1f, 1.0f };
+	const GdkRGBA red = {0.1f, 0.1f, 0.1f, 1.0f};
 	gtk_snapshot_append_color(snapshot, &red, &GRAPHENE_RECT_INIT(0, 0, width, height));
 
 	// 카이로로 그릴거
@@ -1464,10 +1451,11 @@ static void read_draw_snapshot(GtkWidget* widget, GtkSnapshot* snapshot)
 	GdkTexture* logo = res_get_texture(RES_PIX_HOUSEBARI);
 	if (logo)
 	{
-		const float lw = (float)gdk_texture_get_width(logo);
-		const float lh = (float)gdk_texture_get_height(logo);
-		const float y = width > lh ? height - lh - 50.0f : 10.0f;
-		gtk_snapshot_append_texture(snapshot, logo, &GRAPHENE_RECT_INIT(width - lw - 100.0f, y, lw, lh));
+		const int lw = gdk_texture_get_width(logo);
+		const int lh = gdk_texture_get_height(logo);
+		const int x = width - lw - 100;
+		const int y = width > lh ? height - lh - 50 : 10;
+		gtk_snapshot_append_texture(snapshot, logo, &GRAPHENE_RECT_INIT(x, y, lw, lh));
 	}
 
 	// 책 그리기
@@ -1480,7 +1468,7 @@ static void read_draw_snapshot(GtkWidget* widget, GtkSnapshot* snapshot)
 
 #pragma region 책 읽기 클래스
 // 만들기
-ReadWindow* read_window_new(GtkApplication* app)
+ReadWindow *read_window_new(GtkApplication* app)
 {
 	ReadWindow* self = g_new0(ReadWindow, 1);
 
@@ -1507,7 +1495,7 @@ ReadWindow* read_window_new(GtkApplication* app)
 
 	// 팡고 글꼴
 	self->notify_font = pango_font_description_from_string(
-		"Malgun Gothic, Apple SD Gothic Neo, Noto Sans CJK KR, Sans 20");
+			"Malgun Gothic, Apple SD Gothic Neo, Noto Sans CJK KR, Sans 20");
 
 	// 메인 메뉴, 헤더바에서 쓸거라 앞쪽에서 만들어 두자
 	GtkWidget* main_popover = gtk_popover_new();
@@ -1741,40 +1729,40 @@ ReadWindow* read_window_new(GtkApplication* app)
 		char* name;
 		ShortcutFunc func;
 	} actions[] =
-	{
-		{"none", shortcut_none},
-		{"test", shortcut_test},
-		{"exit", shortcut_exit},
-		{"escape", shortcut_escape},
-		{"file_open", shortcut_file_open},
-		{"file_close", shortcut_file_close},
-		{"settings", shortcut_settings},
-		{"fullscreen", shortcut_fullscreen},
-		{"open_last_book", shortcut_open_last_book},
-		{"open_remember", shortcut_open_remember},
-		{"save_remember", shortcut_save_remember},
-		{"delete_book", shortcut_delete_book},
-		{"rename_book", shortcut_rename_book},
-		{"move_book", shortcut_move_book},
-		{"page_prev", shortcut_page_prev},
-		{"page_next", shortcut_page_next},
-		{"page_first", shortcut_page_first},
-		{"page_last", shortcut_page_last},
-		{"page_10_prev", shortcut_page_10_prev},
-		{"page_10_next", shortcut_page_10_next},
-		{"page_minus", shortcut_page_minus},
-		{"page_plus", shortcut_page_plus},
-		{"page_select", shortcut_page_select},
-		{"scan_book_prev", shortcut_scan_book_prev},
-		{"scan_book_next", shortcut_scan_book_next},
-		{"scan_book_random", shortcut_scan_book_random},
-		{"view_mode_left_right", shortcut_view_mode_left_right},
-		{"view_align_center", shortcut_view_align_center},
-		{"view_align_left", shortcut_view_align_left},
-		{"view_align_right", shortcut_view_align_right},
-		// 여기까지
-		{NULL, NULL}
-	};
+			{
+				{"none", shortcut_none},
+				{"test", shortcut_test},
+				{"exit", shortcut_exit},
+				{"escape", shortcut_escape},
+				{"file_open", shortcut_file_open},
+				{"file_close", shortcut_file_close},
+				{"settings", shortcut_settings},
+				{"fullscreen", shortcut_fullscreen},
+				{"open_last_book", shortcut_open_last_book},
+				{"open_remember", shortcut_open_remember},
+				{"save_remember", shortcut_save_remember},
+				{"delete_book", shortcut_delete_book},
+				{"rename_book", shortcut_rename_book},
+				{"move_book", shortcut_move_book},
+				{"page_prev", shortcut_page_prev},
+				{"page_next", shortcut_page_next},
+				{"page_first", shortcut_page_first},
+				{"page_last", shortcut_page_last},
+				{"page_10_prev", shortcut_page_10_prev},
+				{"page_10_next", shortcut_page_10_next},
+				{"page_minus", shortcut_page_minus},
+				{"page_plus", shortcut_page_plus},
+				{"page_select", shortcut_page_select},
+				{"scan_book_prev", shortcut_scan_book_prev},
+				{"scan_book_next", shortcut_scan_book_next},
+				{"scan_book_random", shortcut_scan_book_random},
+				{"view_mode_left_right", shortcut_view_mode_left_right},
+				{"view_align_center", shortcut_view_align_center},
+				{"view_align_left", shortcut_view_align_left},
+				{"view_align_right", shortcut_view_align_right},
+				// 여기까지
+				{NULL, NULL}
+			};
 
 	self->shortcuts = g_hash_table_new(g_str_hash, g_str_equal);
 	for (const struct ShortcutAction* act = actions; act->name; ++act)

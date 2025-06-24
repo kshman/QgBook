@@ -1,12 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
 
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
-    find_program(CLANG_PATH NAMES clang)
-    if (CLANG_PATH)
-        set(CMAKE_C_COMPILER "${CLANG_PATH}" CACHE STRING "C compiler" FORCE)
-    endif ()
-endif ()
-
 project(QgBook C)
 
 set(CMAKE_C_STANDARD 17)
