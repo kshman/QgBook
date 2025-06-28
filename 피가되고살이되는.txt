@@ -138,6 +138,7 @@ bool is_webp_animated(GBytes* data) {
 #if false
 // 셀 편집 기능 만들던거
 // 빌드 안됨
+// 이 코드는 보관용으로 유지됩니다. 향후 셀 편집 기능을 구현하거나 디버깅할 때 참고용으로 사용될 수 있습니다.
 
 // 편집용 Entry를 동적으로 삽입
 static void start_edit_alias(MoveDialog* self, guint row)
