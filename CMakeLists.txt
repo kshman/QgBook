@@ -26,6 +26,11 @@ file(GLOB SRC_FILES
 )
 list(APPEND SRC_FILES ${GRESOURCE_C})
 
+# 윈도우에서 리소스 파일 추가
+if (WIN32)
+    list(APPEND SRC_FILES ${CMAKE_SOURCE_DIR}/QgBook/Resource.rc)
+endif()
+
 # 패키지 찾기
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK4 REQUIRED gtk4)
@@ -55,14 +60,24 @@ target_include_directories(QgBook PRIVATE
 )
 
 # 라이브러리 링크
-target_link_libraries(QgBook
+if (MSVC)
+    target_link_libraries(QgBook
+        ${GTK4_LIBRARIES}
+        ${GLIB_LIBRARIES}
+        ${SQLITE3_LIBRARIES}
+        ${ZLIB_LIBRARIES}
+        ${LIBZIP_LIBRARIES}
+    )
+else()
+    target_link_libraries(QgBook
         m
         ${GTK4_LIBRARIES}
         ${GLIB_LIBRARIES}
         ${SQLITE3_LIBRARIES}
         ${ZLIB_LIBRARIES}
         ${LIBZIP_LIBRARIES}
-)
+    )
+endif()
 
 # 컴파일러 옵션
 target_compile_options(QgBook PRIVATE

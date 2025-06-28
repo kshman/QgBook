@@ -128,3 +128,72 @@ bool is_webp_animated(GBytes* data) {
     }
     return false;
 }
+
+
+
+
+
+
+
+#if false
+// 셀 편집 기능 만들던거
+// 빌드 안됨
+// 이 코드는 보관용으로 유지됩니다. 향후 셀 편집 기능을 구현하거나 디버깅할 때 참고용으로 사용될 수 있습니다.
+
+// 편집용 Entry를 동적으로 삽입
+static void start_edit_alias(MoveDialog* self, guint row)
+{
+	GtkColumnView* view = GTK_COLUMN_VIEW(self->move_list);
+	GtkListItem* item = gtk_column_view_get_row(view, row);
+	if (!item) return;
+
+	MoveObject* obj = gtk_list_item_get_item(item);
+	if (!obj) return;
+
+	GtkWidget* entry = gtk_entry_new();
+	gtk_entry_set_text(GTK_ENTRY(entry), obj->alias);
+	gtk_widget_grab_focus(entry);
+
+	// 엔터/포커스아웃 시 편집 완료
+	g_signal_connect(entry, "activate", G_CALLBACK(on_edit_alias_commit), self);
+	g_signal_connect(entry, "focus-out-event", G_CALLBACK(on_edit_alias_commit), self);
+
+	gtk_list_item_set_child(item, entry);
+}
+
+// 편집 완료 시 호출
+static gboolean on_edit_alias_commit(GtkWidget* entry, GdkEvent* event, gpointer user_data)
+{
+	MoveDialog* self = (MoveDialog*)user_data;
+	guint row = self->selected_index;
+	GtkColumnView* view = GTK_COLUMN_VIEW(self->move_list);
+	GtkListItem* item = gtk_column_view_get_row(view, row);
+	if (!item) return FALSE;
+
+	MoveObject* obj = gtk_list_item_get_item(item);
+	if (!obj) return FALSE;
+
+	const char* new_alias = gtk_entry_get_text(GTK_ENTRY(entry));
+	if (g_strcmp0(obj->alias, new_alias) != 0)
+	{
+		g_free(obj->alias);
+		obj->alias = g_strdup(new_alias);
+		self->modified = true;
+		// 필요시 movloc_update(obj->no, obj->alias, obj->folder);
+	}
+
+	// Entry를 Label로 교체
+	GtkWidget* label = gtk_label_new(obj->alias);
+	gtk_widget_set_halign(label, GTK_ALIGN_START);
+	gtk_list_item_set_child(item, label);
+
+	return FALSE;
+}
+
+if (keyval == GDK_KEY_F2)
+{
+	if (self->selected_index != GTK_INVALID_LIST_POSITION)
+		start_edit_alias(self, self->selected_index);
+	return TRUE;
+}
+#endif
