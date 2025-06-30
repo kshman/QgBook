@@ -24,6 +24,26 @@ typedef struct PageEntry
 	int64_t comp;		///< 압축된 크기(0은 압축 안함)
 } PageEntry;
 
+// 쪽 자료
+typedef struct PageData
+{
+	const PageEntry* entry; // 페이지 엔트리 정보
+	ImageInfo info; // 이미지 정보
+	bool loaded; // 페이지가 로드되었는지 여부
+
+	GBytes* buffer; // 페이지 데이터 (이미지 파일 등)
+	GdkTexture* texture; // 페이지 텍스쳐
+	GdkPixbufAnimation* animation; // 애니메이션 페이지
+} PageData;
+
+/**
+ * @brief 페이지 자료 해제 함수
+ *        PageData 구조체의 동적 할당된 메모리를 해제합니다.
+ * @param data PageData 포인터
+ */
+extern void page_data_free(PageData* data);
+
+
 /**
  * @brief 책의 동작을 정의하는 함수 테이블(BookFunc)
  *        다형성을 위해 각 동작을 함수 포인터로 정의합니다.
@@ -75,16 +95,6 @@ extern void book_base_init(Book* book, const char* filename);
 extern void book_base_dispose(Book* book);
 
 /**
- * @brief 지정한 페이지의 이미지를 읽어 GdkTexture로 반환합니다.
- * @param book Book 객체 포인터
- * @param page 읽을 페이지 번호
- * @return GdkTexture 포인터(성공 시), 실패 시 기본 이미지
- */
-extern GdkTexture* book_read_page(Book* book, int page);
-
-extern bool book_read_anim(Book* book, int page, GdkTexture** out_texture, GdkPixbufAnimation** out_animation);
-
-/**
  * @brief 다음 페이지(또는 쌍페이지)로 이동합니다.
  * @param book Book 객체 포인터
  * @param page_count 페이지 갯수
@@ -115,6 +125,14 @@ extern bool book_move_page(Book* book, int page);
  * @return PageEntry 포인터(존재하지 않으면 NULL)
  */
 extern const PageEntry* book_get_entry(Book* book, int page);
+
+/**
+ * @brief 지정한 페이지의 데이터를 준비합니다. (그림을 만들지는 않음)
+ * @param book Book 객체 포인터
+ * @param page 페이지 번호
+ * @return PageData 포인터(존재하지 않으면 NULL)
+ */
+extern PageData* book_prepare_page(Book* book, const int page);
 
 /**
  * @brief Book 객체를 해제합니다. (inline)

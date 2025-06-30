@@ -58,8 +58,22 @@ void doumi_unlock_program(void)
 #endif
 }
 
+// 문자열을 불린으로
+bool doumi_atob(const char* str)
+{
+	if (str == NULL)
+		return false;
+	if (g_ascii_strcasecmp(str, "1") == 0 ||
+		g_ascii_strcasecmp(str, "true") == 0 ||
+		g_ascii_strcasecmp(str, "yes") == 0 ||
+		g_ascii_strcasecmp(str, "on") == 0 ||
+		g_ascii_strcasecmp(str, "cham") == 0)
+		return true;
+	return false;
+}
+
 // 확장자 가져오기
-void doumi_get_extension(const char* filename, char *extension, size_t size)
+void doumi_get_extension(const char* filename, char* extension, size_t size)
 {
 	if (!filename || !extension || size == 0)
 	{
@@ -76,7 +90,7 @@ void doumi_get_extension(const char* filename, char *extension, size_t size)
 	if (size > 0)
 	{
 		g_strlcpy(extension, ext, size); // 확장자 복사
-		if (size > 0 && extension[size - 1] == '\0') // 널 종료자 확인
+		if (extension[size - 1] == '\0') // 널 종료자 확인
 			return;
 	}
 	else
@@ -102,7 +116,7 @@ bool doumi_is_image_file(const char* filename)
 		g_ascii_strcasecmp(ext, "png") == 0 ||
 		g_ascii_strcasecmp(ext, "jpeg") == 0 ||
 		g_ascii_strcasecmp(ext, "gif") == 0 ||
-		g_ascii_strcasecmp(ext, "bmp") == 0 ||	// 윈도우에서는 BMP를 지원하지 않음
+		g_ascii_strcasecmp(ext, "bmp") == 0 || // 윈도우에서는 BMP를 지원하지 않음
 		g_ascii_strcasecmp(ext, "tiff") == 0)
 		return true; // 비교 순서는 자주 쓰는 순서로
 	return false;
@@ -147,19 +161,6 @@ bool doumi_is_file_readonly(const char* path)
 	g_object_unref(file);
 	if (err) g_error_free(err);
 	return ret;
-}
-
-// 문자열을 불린으로
-bool doumi_atob(const char* str)
-{
-	if (str == NULL) return false;
-	if (g_ascii_strcasecmp(str, "1") == 0 ||
-		g_ascii_strcasecmp(str, "true") == 0 ||
-		g_ascii_strcasecmp(str, "yes") == 0 ||
-		g_ascii_strcasecmp(str, "on") == 0 ||
-		g_ascii_strcasecmp(str, "cham") == 0)
-		return true;
-	return false;
 }
 
 // 문자열 스트립
@@ -624,6 +625,239 @@ bool doumi_get_primary_monitor_dimension(int* width, int* height)
 	return true;
 }
 
+// 이미지 파일 확인
+bool doumi_detect_image_info(GBytes* data, ImageInfo* info)
+{
+	if (!data || !info)
+		return false;
+
+	const guint8* bytes = g_bytes_get_data(data, NULL);
+	const gsize size = g_bytes_get_size(data);
+
+	// 구조체 초기화
+	memset(info, 0, sizeof(ImageInfo));
+
+	if (size > 20 && bytes[0] == 0xFF && bytes[1] == 0xD8) // JPEG
+	{
+		for (gsize i = 2; i < size - 8; i++)
+		{
+			if (bytes[i] == 0xFF && (bytes[i + 1] == 0xC0 || bytes[i + 1] == 0xC2))
+			{
+				info->height = (bytes[i + 5] << 8) | bytes[i + 6];
+				info->width = (bytes[i + 7] << 8) | bytes[i + 8];
+				if (info->width && info->height)
+				{
+					info->type = IMAGE_FILE_TYPE_JPEG;
+					goto pos_detected;
+				}
+				break;
+			}
+		}
+	}
+	else if (size >= 24 && !memcmp(bytes, "\x89PNG", 4)) // PNG
+	{
+		info->width = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
+		info->height = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
+		info->type = IMAGE_FILE_TYPE_PNG;
+		goto pos_detected;
+	}
+	else if (size >= 10 && !memcmp(bytes, "GIF", 3)) // GIF
+	{
+		info->width = bytes[6] | (bytes[7] << 8); // Little endian
+		info->height = bytes[8] | (bytes[9] << 8);
+
+		gsize pos = 13; // 6바이트 헤더 + 7바이트 Logical Screen Descriptor
+
+		// Global Color Table 존재 시 건너뜀
+		if (bytes[10] & 0x80)
+		{
+			const int gct_size = 3 * (1 << ((bytes[10] & 0x07) + 1));
+			pos += gct_size;
+		}
+
+		// GIF 데이터 스트림 파싱으로 애니메이션 검출
+		int image_count = 0;
+		bool has_graphic_control = false;
+
+		while (pos < size - 1)
+		{
+			if (bytes[pos] == 0x21) // Extension Introducer
+			{
+				if (pos + 1 < size)
+				{
+					const guint8 label = bytes[pos + 1];
+					pos += 2;
+
+					if (label == 0xF9) // Graphic Control Extension
+					{
+						has_graphic_control = true;
+						// 블록 크기 (보통 4바이트) + 데이터 + Block Terminator
+						if (pos < size && bytes[pos] == 4)
+						{
+							pos += 5; // 블록 크기(1) + 데이터(4)
+							if (pos < size && bytes[pos] == 0x00)
+								pos++; // Block Terminator
+						}
+					}
+					else if (label == 0xFE || label == 0x01 || label == 0xFF) // Comment, Plain Text, Application
+					{
+						// Sub-block 데이터 건너뛰기
+						while (pos < size && bytes[pos] != 0x00)
+						{
+							const guint8 block_size = bytes[pos];
+							pos += block_size + 1;
+						}
+						if (pos < size) pos++; // Block Terminator
+					}
+				}
+			}
+			else if (bytes[pos] == 0x2C) // Image Separator
+			{
+				image_count++;
+				pos += 10; // Image Descriptor (10바이트)
+
+				if (pos < size)
+				{
+					// Local Color Table 존재 시 건너뛰기
+					if (bytes[pos - 1] & 0x80)
+					{
+						const int lct_size = 3 * (1 << ((bytes[pos - 1] & 0x07) + 1));
+						pos += lct_size;
+					}
+
+					// LZW Minimum Code Size
+					if (pos < size) pos++;
+
+					// Image Data Sub-blocks 건너뛰기
+					while (pos < size && bytes[pos] != 0x00)
+					{
+						guint8 block_size = bytes[pos];
+						pos += block_size + 1;
+						if (pos >= size) break;
+					}
+					if (pos < size) pos++; // Block Terminator
+				}
+
+				// 두 번째 이미지가 발견되면 애니메이션
+				if (image_count > 1)
+				{
+					info->has_anim = true;
+					break;
+				}
+			}
+			else if (bytes[pos] == 0x3B) // Trailer (종료)
+			{
+				break;
+			}
+			else
+			{
+				// 알 수 없는 데이터, 다음 바이트로
+				pos++;
+			}
+		}
+
+		// Graphic Control Extension이 있고 이미지가 하나뿐이어도 애니메이션일 가능성
+		if (!info->has_anim && has_graphic_control && image_count == 1)
+		{
+			info->has_anim = true;
+		}
+
+		info->type = IMAGE_FILE_TYPE_GIF;
+		goto pos_detected;
+	}
+	else if (size >= 30 && !memcmp(bytes + 8, "WEBP", 4) && !memcmp(bytes + 12, "VP8", 3)) // WEBP
+	{
+		bool need_test_anim;
+		if (bytes[15] == 'X')
+		{
+			need_test_anim = false;
+			info->has_anim = (bytes[20] & 0x02) != 0; // ANIMATION 플래그 (비트 1)
+			info->width = ((bytes[24] | (bytes[25] << 8) | (bytes[26] << 16)) & 0xFFFFFF) + 1;
+			info->height = ((bytes[27] | (bytes[28] << 8) | (bytes[29] << 16)) & 0xFFFFFF) + 1;
+		}
+		else if (bytes[15] == ' ')
+		{
+			need_test_anim = true;
+			info->width = (bytes[26] | (bytes[27] << 8)) & 0x3FFF;
+			info->height = (bytes[28] | (bytes[29] << 8)) & 0x3FFF;
+		}
+		else if (bytes[15] == 'L')
+		{
+			need_test_anim = true;
+			const guint bits = bytes[21] | (bytes[22] << 8) | (bytes[23] << 16) | (bytes[24] << 24);
+			info->width = (int)((bits & 0x3FFF) + 1);
+			info->height = (int)(((bits >> 14) & 0x3FFF) + 1);
+		}
+		else
+		{
+			// 몰라 모르는 webp
+			return false;
+		}
+
+		// ANMF 청크로 애니메이션 확인
+		if (need_test_anim)
+		{
+			for (gsize i = 12; i + 8 < size;)
+			{
+				if (!memcmp(bytes + i, "ANMF", 4))
+				{
+					info->has_anim = true;
+					break;
+				}
+
+				const guint32 chunk_size = bytes[i + 4] | (bytes[i + 5] << 8) |
+					(bytes[i + 6] << 16) | (bytes[i + 7] << 24);
+				i += chunk_size + 8 + (chunk_size % 2); // 청크 크기 + 8바이트 헤더
+			}
+		}
+
+		info->type = IMAGE_FILE_TYPE_WEBP;
+		goto pos_detected;
+	}
+	else if (size >= 26 && !memcmp(bytes, "BM", 2)) // BMP
+	{
+		info->width = bytes[18] | (bytes[19] << 8) | (bytes[20] << 16) | (bytes[21] << 24);
+		info->height = bytes[22] | (bytes[23] << 8) | (bytes[24] << 16) | (bytes[25] << 24);
+		// 높이가 음수일 수 있음 (top-down DIB)
+		if (info->height < 0) info->height = -info->height;
+		info->type = IMAGE_FILE_TYPE_BMP;
+		goto pos_detected;
+	}
+	else if (size >= 20 && !memcmp(bytes, "II*\0", 4)) // TIFF (Little Endian)
+	{
+		// IFD 오프셋 읽기
+		const guint32 ifd_offset = bytes[4] | (bytes[5] << 8) | (bytes[6] << 16) | (bytes[7] << 24);
+		if (ifd_offset < size - 12)
+		{
+			const guint16 num_entries = (guint16)(bytes[ifd_offset] | (bytes[ifd_offset + 1] << 8));
+			// 각 IFD 엔트리 확인 (12바이트씩)
+			for (int i = 0; i < num_entries && ifd_offset + 2 + i * 12 + 12 <= size; i++)
+			{
+				const gsize entry_offset = ifd_offset + 2 + i * 12;
+				const guint16 tag = (guint16)(bytes[entry_offset] | (bytes[entry_offset + 1] << 8));
+				const guint32 value = bytes[entry_offset + 8] | (bytes[entry_offset + 9] << 8) |
+					(bytes[entry_offset + 10] << 16) | (bytes[entry_offset + 11] << 24);
+				if (tag == 0x0100)
+					info->width = (int)value;
+				else if (tag == 0x0101)
+					info->height = (int)value;
+			}
+		}
+
+		if (info->width && info->height)
+		{
+			info->type = IMAGE_FILE_TYPE_TIFF;
+			goto pos_detected;
+		}
+	}
+
+	return false;
+
+pos_detected:
+	info->size = (size_t)info->width * (size_t)info->height * 4;
+	return true;
+}
+
 // 메지시 박스 데이터
 typedef struct MesgBoxData
 {
@@ -645,7 +879,7 @@ void cb_mesg_box_choose(GObject* source_object, GAsyncResult* res, gpointer user
 // 메시지 박스 공통
 static GtkAlertDialog* create_alert_mesg_box(const char* text, const char* detail, const char** buttons)
 {
-	if (!text || !*text || !buttons)
+	if (!text || !*text)
 		return NULL;
 	GtkAlertDialog* dialog = gtk_alert_dialog_new("");
 	gtk_alert_dialog_set_modal(dialog, true);

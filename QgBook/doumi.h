@@ -61,6 +61,7 @@ extern bool doumi_is_image_file(const char* filename);
 extern bool doumi_is_archive_zip(const char* filename);
 extern bool doumi_is_file_readonly(const char* path);
 extern void doumi_get_extension(const char* filename, char* extension, size_t size);
+extern bool doumi_detect_image_info(GBytes* data, ImageInfo* info);
 
 // 변환
 extern bool doumi_atob(const char* str);

@@ -107,18 +107,20 @@ struct ReadWindow
 
 	// 책
 	Book* book;
+	PageData* pages[2];	// 일단 왼쪽/오른쪽 두장
 
-	GdkTexture* page_left;
-	GdkTexture* page_right;
-
-	GdkPixbufAnimation* animation;
-	GdkPixbufAnimationIter* anim_iter;
 	guint anim_id;
+	GdkPixbufAnimationIter* anim_iter; // 애니메이션 페이지용
+
+	// 캐시
+	PageData** cache_pages; // 페이지 캐시
+	GQueue* cache_queue;
+	size_t cache_size;
 };
 
 // 앞서 선언
 static void queue_draw_book(ReadWindow* self);
-static void prepare_page(ReadWindow* self);
+static void prepare_pages(ReadWindow* self);
 static void page_control(ReadWindow* self, BookControl c);
 
 #pragma region 알림 메시지
@@ -251,7 +253,7 @@ static void update_book_info(ReadWindow* self)
 		return;
 
 	char info[256], size[64];
-	doumi_format_size_friendly(/*self->book->cache_size*/0, size, sizeof(size));
+	doumi_format_size_friendly(self->cache_size, size, sizeof(size));
 	g_snprintf(info, sizeof(info), "%d/%d [%s]", self->book->cur_page + 1, self->book->total_page, size);
 	gtk_label_set_text(GTK_LABEL(self->info_label), info);
 	gtk_label_set_text(GTK_LABEL(self->title_label), self->book->base_name);
@@ -262,7 +264,7 @@ static void queue_draw_book(ReadWindow* self)
 {
 	if (self->book)
 	{
-		prepare_page(self);
+		prepare_pages(self);
 		update_book_info(self);
 		// 쪽 정보를 그려야 한다면 여기서 하면 된다
 	}
@@ -280,26 +282,13 @@ static void clear_page(ReadWindow* self)
 		g_source_remove(self->anim_id);
 		self->anim_id = 0;
 	}
-	if (self->animation)
-	{
-		g_object_unref(self->animation);
-		self->animation = NULL;
-	}
 	if (self->anim_iter)
 	{
 		g_object_unref(self->anim_iter);
 		self->anim_iter = NULL;
 	}
-	if (self->page_left)
-	{
-		g_object_unref(self->page_left);
-		self->page_left = NULL;
-	}
-	if (self->page_right)
-	{
-		g_object_unref(self->page_right);
-		self->page_right = NULL;
-	}
+	self->pages[0] = NULL;
+	self->pages[1] = NULL;
 }
 
 // 진짜 책 정리
@@ -308,7 +297,21 @@ static void finalize_book(ReadWindow* self)
 {
 	if (self->book != NULL)
 	{
-		int page = self->book->cur_page - 1 >= self->book->total_page ? 0 : self->book->cur_page;
+		if (self->cache_pages)
+		{
+			for (int i = 0; i < self->book->total_page; i++)
+			{
+				PageData* data = self->cache_pages[i];
+				if (data)
+					page_data_free(data);
+			}
+			g_free((gpointer)self->cache_pages);
+		}
+
+		g_queue_free(self->cache_queue);
+		self->cache_size = 0;
+
+		const int page = self->book->cur_page - 1 >= self->book->total_page ? 0 : self->book->cur_page;
 		recently_set_page(self->book->base_name, page);
 
 		book_dispose(self->book);
@@ -378,10 +381,14 @@ static void open_book(ReadWindow* self, GFile* file)
 	self->book = book;
 	book->cur_page = recently_get_page(book->base_name);
 
+	self->cache_pages = g_new0(PageData*, book->total_page);
+	self->cache_queue = g_queue_new();
+	self->cache_size = 0;
+
 	update_book_info(self);
 	gtk_widget_set_sensitive(self->menu_file_close, true);
 
-	prepare_page(self);
+	prepare_pages(self);
 
 	if (self->page_dialog)
 		page_dialog_set_book(self->page_dialog, book);
@@ -434,40 +441,151 @@ static void open_book_dialog(ReadWindow* self)
 	g_object_unref(fzip);
 }
 
-// 애니메이션 프레임
-static gboolean cb_animate_timer(gpointer user_data)
+// 애니메이션 콜백
+static gboolean cb_anim_timeout(gpointer data)
 {
-	ReadWindow* self = user_data;
+	ReadWindow* self = data;
+	PageData* page = self->pages[0];
+	if (page == NULL || !page->info.has_anim)
+		return false; // 애니메이션이 없으면 그냥 나감
+
+	if (page->texture)
+		g_object_unref(page->texture);
+
 	GdkPixbuf* pixbuf = gdk_pixbuf_animation_iter_get_pixbuf(self->anim_iter);
+	page->texture = gdk_texture_new_for_pixbuf(pixbuf);
 
-	if (self->page_left)
-		g_object_unref(self->page_left);
-	self->page_left = gdk_texture_new_for_pixbuf(pixbuf);
+	gtk_widget_queue_draw(self->draw); // 다시 그리라고 요청
 
-	gtk_widget_queue_draw(self->draw);
-
-	int _ = gdk_pixbuf_animation_iter_get_delay_time(self->anim_iter);
 	gdk_pixbuf_animation_iter_advance(self->anim_iter, NULL);
 
-	return true;
+	return true; // 타이머 계속 유지
 }
 
-// 애니메이션 준비
-static void prepare_animation(ReadWindow* self)
+// 쪽 읽기
+static void read_page(ReadWindow* self, PageData* data)
 {
-	g_assert(self->animation != NULL);
+	if (data == NULL)
+		return; // 페이지가 없으면 그냥 나감
 
-	self->anim_iter = gdk_pixbuf_animation_get_iter(self->animation, NULL);
-	cb_animate_timer(self); // 첫 프레임을 그리기 위해 호출
+	if (data->loaded)
+	{
+		// 애니메이션이 있으면 재생
+		if (data->info.has_anim && data->animation)
+		{
+			self->anim_iter = gdk_pixbuf_animation_get_iter(data->animation, NULL);
+			int delay = gdk_pixbuf_animation_iter_get_delay_time(self->anim_iter);
+			if (delay <= 0)
+				delay = 100; // 애니메이션 딜레이가 0이면 100ms로 설정
+			self->anim_id = g_timeout_add(delay, cb_anim_timeout, self);
+		}
+		return; // 이미 읽은 페이지면 그냥 나감
+	}
 
-	int delay = gdk_pixbuf_animation_iter_get_delay_time(self->anim_iter);
-	if (delay <= 0)
-		delay = 100; // 애니메이션 딜레이가 잘못되었거나 없는 경우
-	self->anim_id = g_timeout_add(delay, cb_animate_timer, self);
+	if (data->texture)
+	{
+		// 이러면 안된다. 텍스쳐 재사용 해야하는 걸로 고쳐야함
+		// ...이라고 생각했는데 애니메이션은 어짜피 지워야 한다
+		// 애니메이션이 없는 그림은 위에 loaded에서 걸러진다
+		g_object_unref(data->texture);
+		data->texture = NULL;
+	}
+
+	if (data->buffer == NULL)
+	{
+		// 페이지 버퍼가 없으면, 즉 파일 오류이거나 처리할 수 없는 그림 형식이면
+		data->texture = g_object_ref(res_get_texture(RES_PIX_NO_IMAGE));
+	}
+	else if (data->info.has_anim)
+	{
+		// 애니메이션이면
+		GInputStream* stream = g_memory_input_stream_new_from_bytes(data->buffer);
+		data->animation = gdk_pixbuf_animation_new_from_stream(stream, NULL, NULL);
+		g_object_unref(stream);
+
+		g_bytes_unref(data->buffer);
+		data->buffer = NULL;
+
+		if (data->animation == NULL)
+		{
+			// 애니메이션이 없으면 그냥 노 이미지로
+			data->texture = g_object_ref(res_get_texture(RES_PIX_NO_IMAGE));
+		}
+		else
+		{
+			// 애니메이션이 있으면
+			self->anim_iter = gdk_pixbuf_animation_get_iter(data->animation, NULL);
+			int delay = gdk_pixbuf_animation_iter_get_delay_time(self->anim_iter);
+			if (delay <= 0)
+				delay = 100; // 애니메이션 딜레이가 0이면 100ms로 설정
+			self->anim_id = g_timeout_add(delay, cb_anim_timeout, self);
+		}
+	}
+	else
+	{
+		GError* error = NULL;
+		data->texture = gdk_texture_new_from_bytes(data->buffer, &error);
+
+		g_bytes_unref(data->buffer);
+		data->buffer = NULL;
+
+		if (error)
+		{
+			g_log("BOOK", G_LOG_LEVEL_ERROR, _("Failed to create page %d: %s"),
+				data->entry->page + 1, error->message);
+			g_clear_error(&error);
+		}
+
+		if (!data->texture)
+		{
+			// 텍스쳐를 못만들었다. 노 이미지로
+			data->texture = g_object_ref(res_get_texture(RES_PIX_NO_IMAGE));
+		}
+	}
+
+	data->loaded = true; // 페이지는 읽은 것으로 표시
+}
+
+// 쪽 준비 (여기서 캐시 처리)
+static PageData* try_page_read_or_cache_data(ReadWindow* self, const int page)
+{
+	PageData* data = self->cache_pages[page];
+
+	if (data != NULL)
+		return data; // 캐시에 있으면 그냥 반환
+
+	data = book_prepare_page(self->book, page);
+
+	size_t dest_size = self->cache_size + data->info.size;
+	const size_t actual_size = config_get_actual_max_page_cache();
+	if (dest_size > actual_size)
+	{
+		// 캐시가 너무 커지면 오래된 페이지를 제거
+		while (dest_size > actual_size && !g_queue_is_empty(self->cache_queue))
+		{
+			const int index = GPOINTER_TO_INT(g_queue_pop_head(self->cache_queue));
+			PageData* item = self->cache_pages[index];
+			if (item != NULL)
+			{
+				dest_size -= item->info.size;
+				page_data_free(item); // 페이지 데이터 해제
+				self->cache_pages[index] = NULL; // 캐시에서 제거
+			}
+		}
+
+		self->cache_size = dest_size; // 현재 캐시 크기 갱신
+	}
+
+	// 혹시나 페이지가 너무 커서 캐시가 넘쳤더라도 지금 만든건 못지운다
+	self->cache_pages[page] = data; // 캐시에 넣음
+	g_queue_push_tail(self->cache_queue, GINT_TO_POINTER(page)); // 캐시 큐에 넣음
+	self->cache_size = dest_size;
+
+	return data;
 }
 
 // 쪽 준비
-static void prepare_page(ReadWindow* self)
+static void prepare_pages(ReadWindow* self)
 {
 	if (self->book == NULL)
 		return; // 책이 없으면 그냥 나감
@@ -476,69 +594,46 @@ static void prepare_page(ReadWindow* self)
 
 	const int cur = self->book->cur_page;
 
-	// 캐시를 어기에 넣어야 하나?
-
 	const ViewMode mode = (ViewMode)config_get_int(CONFIG_VIEW_MODE, true);
 	switch (mode) // NOLINT(clang-diagnostic-switch-enum)
 	{
 		case VIEW_MODE_FIT:
-			if (!book_read_anim(self->book, cur, &self->page_left, &self->animation))
-				self->page_left = g_object_ref(res_get_texture(RES_PIX_NO_IMAGE));
-			if (self->animation)
-				prepare_animation(self);
-			self->page_right = NULL;
+			self->pages[0] = try_page_read_or_cache_data(self, cur);
+			read_page(self, self->pages[0]);
 			self->view_pages = 1;
 			break;
 
 		case VIEW_MODE_LEFT_TO_RIGHT:
 		case VIEW_MODE_RIGHT_TO_LEFT:
 		{
-			GdkTexture* l;
-			if (!book_read_anim(self->book, cur, &l, &self->animation))
-				l = g_object_ref(res_get_texture(RES_PIX_NO_IMAGE));
+			PageData* l = self->pages[0] = try_page_read_or_cache_data(self, cur);
+			read_page(self, l);
 
-			if (self->animation)
+			if (l->info.has_anim || l->info.width > l->info.height ||
+				self->cache_size >= config_get_actual_max_page_cache())
 			{
-				prepare_animation(self);
-				self->page_right = NULL;
+				// 애니메이션이 있거나 폭이 넓으면 1쪽만
+				// 그리고 캐시가 넘쳐도 1쪽만
 				self->view_pages = 1;
 			}
 			else
 			{
-				GdkTexture* r = NULL;
-				if (l != NULL && gdk_texture_get_width(l) > gdk_texture_get_height(l))
+				const int next = cur + 1;
+				if (next < self->book->total_page)
 				{
-					// 폭이 넓으면 1쪽만
-				}
-				else
-				{
-					if (cur + 1 < self->book->total_page)
+					PageData* r = try_page_read_or_cache_data(self, next);
+					if (r->info.has_anim || r->info.width > r->info.height)
 					{
-						GdkPixbufAnimation* ranim;
-						if (book_read_anim(self->book, cur + 1, &r, &ranim))
-						{
-							if (ranim != NULL)
-							{
-								// 애니메이션이 있으면 안한다
-								g_object_unref(ranim);
-							}
-							if (r != NULL && gdk_texture_get_width(r) > gdk_texture_get_height(r))
-							{
-								// 다른 쪽도 넓으면 1장만
-								g_object_unref(r);
-								r = NULL;
-							}
-						}
+						// 다른쪽이 애니메이션이거나 폭이 넓으면 1쪽만
+						self->view_pages = 1;
 					}
 					else
 					{
-						// 다음 페이지가 없으면 오른쪽은 없음
+						read_page(self, r);
+						self->pages[1] = r; // 오른쪽 페이지도 읽음
+						self->view_pages = 2;
 					}
 				}
-
-				self->page_left = l;
-				self->page_right = r;
-				self->view_pages = (l ? 1 : 0) + (r ? 1 : 0);
 			}
 			break;
 		}
@@ -643,7 +738,7 @@ static void page_control(ReadWindow* self, BookControl c)
 			g_assert_not_reached(); // 잘못된 컨트롤
 	}
 
-	prepare_page(self);
+	prepare_pages(self);
 	queue_draw_book(self);
 }
 
@@ -657,7 +752,7 @@ void cb_page_dialog(gpointer sender, int page)
 	if (book_move_page(self->book, page))
 	{
 		// 페이지 이동 성공
-		prepare_page(self);
+		prepare_pages(self);
 		queue_draw_book(self);
 	}
 }
@@ -1345,13 +1440,13 @@ static void shortcut_view_align_toggle(ReadWindow* self)
 
 #pragma region 스냅샷 그리기
 // 텍스쳐를 화면에 맞게 그리기
-static void paint_page_fit(ReadWindow* self, GtkSnapshot* snapshot, GdkTexture* texture, int width, int height)
+static void paint_page_fit(ReadWindow* self, GtkSnapshot* snapshot, const PageData* page, int width, int height)
 {
-	g_return_if_fail(texture != NULL);
+	if (page == NULL || page->texture == NULL)
+		return; // 텍스쳐가 없으면 그냥 나감
 
 	const bool zoom = config_get_bool(CONFIG_VIEW_ZOOM, true);
-	const BoundSize ns = bound_size_calc_dest(zoom, width, height,
-		gdk_texture_get_width(texture), gdk_texture_get_height(texture));
+	const BoundSize ns = bound_size_calc_dest(zoom, width, height, page->info.width, page->info.height);
 	BoundRect rt = bound_rect_calc_rect(HORIZ_ALIGN_CENTER, width, height, ns.width, ns.height);
 
 	// 마진 적용
@@ -1368,31 +1463,27 @@ static void paint_page_fit(ReadWindow* self, GtkSnapshot* snapshot, GdkTexture* 
 		rt.left = rt.right - w;
 	}
 
-	gtk_snapshot_append_texture(snapshot, texture, &BOUND_RECT_TO_GRAPHENE_RECT(&rt));
+	gtk_snapshot_append_texture(snapshot, page->texture, &BOUND_RECT_TO_GRAPHENE_RECT(&rt));
 }
 
 // 텍스쳐 두장을 나란히 화면 중앙에 붙여서 그리기 + 마진 지원
 static void paint_page_dual(
 	ReadWindow* self, GtkSnapshot* snapshot,
-	GdkTexture* left, GdkTexture* right,
+	const PageData* left, const PageData* right,
 	int width, int height)
 {
-	g_return_if_fail(left != NULL);
-	g_return_if_fail(right != NULL);
+	if (left == NULL || right == NULL)
+		return; // 그릴 쪽이 없으면 그냥 나감
 
 	const int half = width / 2;
 	const bool zoom = config_get_bool(CONFIG_VIEW_ZOOM, true);
 
 	// 왼쪽 페이지
-	const BoundSize ls = bound_size_calc_dest(
-		zoom, half, height,
-		gdk_texture_get_width(left), gdk_texture_get_height(left));
+	const BoundSize ls = bound_size_calc_dest(zoom, half, height, left->info.width, left->info.height);
 	BoundRect lb = bound_rect_calc_rect(HORIZ_ALIGN_RIGHT, half, height, ls.width, ls.height);
 
 	// 오른쪽 페이지
-	const BoundSize rs = bound_size_calc_dest(
-		zoom, half, height,
-		gdk_texture_get_width(right), gdk_texture_get_height(right));
+	const BoundSize rs = bound_size_calc_dest(zoom, half, height, right->info.width, right->info.height);
 	const BoundRect ro = bound_rect_calc_rect(HORIZ_ALIGN_LEFT, half, height, rs.width, rs.height);
 	BoundRect rb = bound_rect_delta(&ro, half, 0);
 
@@ -1423,8 +1514,10 @@ static void paint_page_dual(
 	}
 
 	// 그리기
-	gtk_snapshot_append_texture(snapshot, left, &BOUND_RECT_TO_GRAPHENE_RECT(&lb));
-	gtk_snapshot_append_texture(snapshot, right, &BOUND_RECT_TO_GRAPHENE_RECT(&rb));
+	if (left->texture)
+		gtk_snapshot_append_texture(snapshot, left->texture, &BOUND_RECT_TO_GRAPHENE_RECT(&lb));
+	if (right->texture)
+		gtk_snapshot_append_texture(snapshot, right->texture, &BOUND_RECT_TO_GRAPHENE_RECT(&rb));
 }
 
 // 책 그리기
@@ -1438,8 +1531,8 @@ static void paint_book(ReadWindow* self, GtkSnapshot* snapshot, int width, int h
 	if (self->view_pages == 1)
 	{
 		// 한장만 그리기
-		GdkTexture* tex = self->page_left ? self->page_left : self->page_right;
-		paint_page_fit(self, snapshot, tex, width, height);
+		const PageData* data = self->pages[0] ? self->pages[0] : self->pages[1];
+		paint_page_fit(self, snapshot, data, width, height);
 	}
 	else if (self->view_pages == 2)
 	{
@@ -1453,17 +1546,17 @@ static void paint_book(ReadWindow* self, GtkSnapshot* snapshot, int width, int h
 		}
 
 		// 두장 그리기
-		GdkTexture* l;
-		GdkTexture* r;
+		const PageData* l;
+		const PageData* r;
 		if (mode == VIEW_MODE_LEFT_TO_RIGHT)
 		{
-			l = self->page_left;
-			r = self->page_right;
+			l = self->pages[0];
+			r = self->pages[1];
 		}
 		else
 		{
-			l = self->page_right;
-			r = self->page_left;
+			l = self->pages[1];
+			r = self->pages[0];
 		}
 
 		if (l && r)
@@ -1485,9 +1578,7 @@ static void paint_book(ReadWindow* self, GtkSnapshot* snapshot, int width, int h
 		{
 			// 헐?
 			// 페이지가 없으면 no_image를 그린다
-			GdkTexture* no_image = res_get_texture(RES_PIX_NO_IMAGE);
-			paint_page_fit(self, snapshot, no_image, width, height);
-			// g_object_unref(no_image); // 이거 하면 안된다
+			// ...였는데 귀찮다 그리지 말자
 		}
 	}
 	else

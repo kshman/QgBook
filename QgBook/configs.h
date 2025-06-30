@@ -93,7 +93,7 @@ extern void config_set_bool(ConfigKeys name, bool value, bool cache_only);
 extern void config_set_int(ConfigKeys name, gint32 value, bool cache_only);
 extern void config_set_long(ConfigKeys name, gint64 value, bool cache_only);
 
-extern uint64_t config_get_actual_max_page_cache(void);
+extern size_t config_get_actual_max_page_cache(void);
 
 
 // 최근 파일

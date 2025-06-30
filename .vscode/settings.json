@@ -1,3 +1,10 @@
 {
-  "cmake.buildDirectory": "${workspaceFolder}/cmake-build-debug"
+  "cmake.buildDirectory": "${workspaceFolder}/cmake-build-debug",
+  "files.associations": {
+    "configs.h": "c",
+    "defs.h": "c"
+  },
+  "C_Cpp.intelliSenseEngine": "default",
+  "C_Cpp.configurationWarnings": "disabled",
+  "C_Cpp.errorSquiggles": "disabled"
 }
