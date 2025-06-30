@@ -59,6 +59,8 @@ static void app_activate(GtkApplication* app, gpointer user_data)
 	};
 	for (int i = 0; i < RES_MAX_VALUE; i++)
 	{
+		if (s_res_filenames[i] == NULL)
+			continue; // NULL은 건너뛰기
 		const char* psz = doumi_resource_path(s_res_filenames[i]);
 		GdkTexture* texture = gdk_texture_new_from_resource(psz);
 		s_textures[i] = texture;

@@ -82,3 +82,5 @@ Delete Location=옮길 곳 지우기
 The specified directory does not exist=지정한 디렉토리가 존재하지 않아요
 Failed to add the location=옮길 곳을 추가하지 못했어요
 Delete selected location?=선택한 옮길 곳을 지울까요?
+Loading page %d...=%d번째 장을 읽고 있어요...
+Failed to load animation: %s=애니메이션을 읽지 못했어요: %s

@@ -25,12 +25,16 @@ static void page_entry_free(gpointer ptr)
 // 쪽 자료 메모리 해제
 void page_data_free(PageData* data)
 {
+	if (data->anim_timer)
+		g_source_remove(data->anim_timer);
 	if (data->buffer)
 		g_bytes_unref(data->buffer);
 	if (data->texture)
 		g_object_unref(data->texture);
 	if (data->animation)
 		g_object_unref(data->animation);
+	if (data->anim_iter)
+		g_object_unref(data->anim_iter);
 	g_free(data);
 }
 

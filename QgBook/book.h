@@ -30,10 +30,13 @@ typedef struct PageData
 	const PageEntry* entry; // 페이지 엔트리 정보
 	ImageInfo info; // 이미지 정보
 	bool loaded; // 페이지가 로드되었는지 여부
+	bool async_loading; // 비동기 로딩 중인지 여부
 
 	GBytes* buffer; // 페이지 데이터 (이미지 파일 등)
 	GdkTexture* texture; // 페이지 텍스쳐
 	GdkPixbufAnimation* animation; // 애니메이션 페이지
+	GdkPixbufAnimationIter* anim_iter; // 애니메이션 반복자
+	guint anim_timer; // 애니메이션 타이머 ID (0이면 없음)
 } PageData;
 
 /**

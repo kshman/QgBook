@@ -11,6 +11,9 @@ typedef struct ReadWindow ReadWindow;
 typedef struct PageDialog PageDialog;
 typedef void (*ShortcutFunc)(ReadWindow*);
 
+// 임시 싱글턴... 이지만 아마 임시가 아닐 것이다
+static ReadWindow* s_read_window = NULL;
+
 // 외부 함수
 extern void renex_dialog_show_async(GtkWindow* parent, const char* filename, RenameCallback callback,
 	gpointer user_data);
@@ -108,9 +111,6 @@ struct ReadWindow
 	// 책
 	Book* book;
 	PageData* pages[2];	// 일단 왼쪽/오른쪽 두장
-
-	guint anim_id;
-	GdkPixbufAnimationIter* anim_iter; // 애니메이션 페이지용
 
 	// 캐시
 	PageData** cache_pages; // 페이지 캐시
@@ -277,24 +277,43 @@ static void queue_draw_book(ReadWindow* self)
 // 쪽 정리
 static void clear_page(ReadWindow* self)
 {
-	if (self->anim_id)
+	if (self->pages[0])
 	{
-		g_source_remove(self->anim_id);
-		self->anim_id = 0;
+		if (self->pages[0]->anim_timer)
+		{
+			g_source_remove(self->pages[0]->anim_timer);
+			self->pages[0]->anim_timer = 0;
+		}
+		if (self->pages[0]->anim_iter)
+		{
+			g_object_unref(self->pages[0]->anim_iter);
+			self->pages[0]->anim_iter = NULL;
+		}
+		self->pages[0] = NULL;
 	}
-	if (self->anim_iter)
+
+	if (self->pages[1])
 	{
-		g_object_unref(self->anim_iter);
-		self->anim_iter = NULL;
+		if (self->pages[1]->anim_timer)
+		{
+			g_source_remove(self->pages[1]->anim_timer);
+			self->pages[1]->anim_timer = 0;
+		}
+		if (self->pages[1]->anim_iter)
+		{
+			g_object_unref(self->pages[1]->anim_iter);
+			self->pages[1]->anim_iter = NULL;
+		}
+		self->pages[1] = NULL;
 	}
-	self->pages[0] = NULL;
-	self->pages[1] = NULL;
 }
 
 // 진짜 책 정리
 // 원래 close_book에 있던건데 종료할때 GTK 오류 메시지가 속출하여 따로 뺌
 static void finalize_book(ReadWindow* self)
 {
+	clear_page(self);
+
 	if (self->book != NULL)
 	{
 		if (self->cache_pages)
@@ -317,8 +336,6 @@ static void finalize_book(ReadWindow* self)
 		book_dispose(self->book);
 		self->book = NULL;
 	}
-
-	clear_page(self);
 }
 
 // 책 정리
@@ -442,24 +459,78 @@ static void open_book_dialog(ReadWindow* self)
 }
 
 // 애니메이션 콜백
-static gboolean cb_anim_timeout(gpointer data)
+static gboolean cb_page_anim_timeout(gpointer data)
 {
-	ReadWindow* self = data;
-	PageData* page = self->pages[0];
-	if (page == NULL || !page->info.has_anim)
+	ReadWindow* self = s_read_window;
+	PageData* page = data;
+
+	if (!page->info.has_anim || !page->anim_iter)
 		return false; // 애니메이션이 없으면 그냥 나감
+
+	bool visible = page == self->pages[0] || page == self->pages[1];
+	if (!visible)
+		return false; // 현재 페이지가 아니면 애니메이션을 진행하지 않음
 
 	if (page->texture)
 		g_object_unref(page->texture);
 
-	GdkPixbuf* pixbuf = gdk_pixbuf_animation_iter_get_pixbuf(self->anim_iter);
+	GdkPixbuf* pixbuf = gdk_pixbuf_animation_iter_get_pixbuf(page->anim_iter);
 	page->texture = gdk_texture_new_for_pixbuf(pixbuf);
 
 	gtk_widget_queue_draw(self->draw); // 다시 그리라고 요청
 
-	gdk_pixbuf_animation_iter_advance(self->anim_iter, NULL);
+	gdk_pixbuf_animation_iter_advance(page->anim_iter, NULL);
 
 	return true; // 타이머 계속 유지
+}
+
+// 비동기 애니메이션 로딩 완료 콜백
+static void cb_animation_load_finish(GObject* source_object, GAsyncResult* res, gpointer user_data)
+{
+	ReadWindow* self = s_read_window;
+	PageData* data = user_data;
+
+	GError* error = NULL;
+	data->animation = gdk_pixbuf_animation_new_from_stream_finish(res, &error);
+	data->async_loading = false;
+
+	if (error)
+	{
+		g_log("BOOK", G_LOG_LEVEL_WARNING, _("Failed to load animation: %s"), error->message);
+		g_clear_error(&error);
+		data->texture = g_object_ref(res_get_texture(RES_PIX_NO_IMAGE));
+	}
+	else if (data->animation)
+	{
+		// 애니메이션 로딩 성공
+		data->anim_iter = gdk_pixbuf_animation_get_iter(data->animation, NULL);
+		int delay = gdk_pixbuf_animation_iter_get_delay_time(data->anim_iter);
+		if (delay <= 0) delay = 100;
+		data->anim_timer = g_timeout_add(delay, cb_page_anim_timeout, data);
+
+		// 첫 프레임 텍스처 설정
+		GdkPixbuf* pixbuf = gdk_pixbuf_animation_iter_get_pixbuf(data->anim_iter);
+		data->texture = gdk_texture_new_for_pixbuf(pixbuf);
+	}
+	else
+	{
+		// 어쨋든 애니메이션은 실패
+		data->texture = g_object_ref(res_get_texture(RES_PIX_NO_IMAGE));
+	}
+
+	data->loaded = true;
+
+	// 버퍼 정리
+	if (data->buffer)
+	{
+		g_bytes_unref(data->buffer);
+		data->buffer = NULL;
+	}
+
+	// 화면 업데이트
+	bool visible = data == self->pages[0] || data == self->pages[1];
+	if (!visible)
+		gtk_widget_queue_draw(self->draw);
 }
 
 // 쪽 읽기
@@ -471,15 +542,21 @@ static void read_page(ReadWindow* self, PageData* data)
 	if (data->loaded)
 	{
 		// 애니메이션이 있으면 재생
-		if (data->info.has_anim && data->animation)
+		if (data->info.has_anim && data->animation && !data->anim_timer)
 		{
-			self->anim_iter = gdk_pixbuf_animation_get_iter(data->animation, NULL);
-			int delay = gdk_pixbuf_animation_iter_get_delay_time(self->anim_iter);
-			if (delay <= 0)
-				delay = 100; // 애니메이션 딜레이가 0이면 100ms로 설정
-			self->anim_id = g_timeout_add(delay, cb_anim_timeout, self);
+			if (!data->anim_iter)
+				data->anim_iter = gdk_pixbuf_animation_get_iter(data->animation, NULL);
+			int delay = gdk_pixbuf_animation_iter_get_delay_time(data->anim_iter);
+			if (delay <= 0) delay = 100; // 애니메이션 딜레이가 0이면 100ms로 설정
+			data->anim_timer = g_timeout_add(delay, cb_page_anim_timeout, data);
 		}
 		return; // 이미 읽은 페이지면 그냥 나감
+	}
+
+	if (data->async_loading)
+	{
+		// 이미 비동기 로딩 중이면 그냥 나감
+		return;
 	}
 
 	if (data->texture)
@@ -498,28 +575,17 @@ static void read_page(ReadWindow* self, PageData* data)
 	}
 	else if (data->info.has_anim)
 	{
-		// 애니메이션이면
+		data->async_loading = true; // 비동기 로딩 시작
+		data->texture = NULL;
+
+		// 비동기 애니메이션 로딩 시작
 		GInputStream* stream = g_memory_input_stream_new_from_bytes(data->buffer);
-		data->animation = gdk_pixbuf_animation_new_from_stream(stream, NULL, NULL);
+		gdk_pixbuf_animation_new_from_stream_async(
+			stream, NULL, cb_animation_load_finish, data);
 		g_object_unref(stream);
 
-		g_bytes_unref(data->buffer);
-		data->buffer = NULL;
-
-		if (data->animation == NULL)
-		{
-			// 애니메이션이 없으면 그냥 노 이미지로
-			data->texture = g_object_ref(res_get_texture(RES_PIX_NO_IMAGE));
-		}
-		else
-		{
-			// 애니메이션이 있으면
-			self->anim_iter = gdk_pixbuf_animation_get_iter(data->animation, NULL);
-			int delay = gdk_pixbuf_animation_iter_get_delay_time(self->anim_iter);
-			if (delay <= 0)
-				delay = 100; // 애니메이션 딜레이가 0이면 100ms로 설정
-			self->anim_id = g_timeout_add(delay, cb_anim_timeout, self);
-		}
+		// 즉시 화면 업데이트 (로딩 표시)
+		gtk_widget_queue_draw(self->draw);
 	}
 	else
 	{
@@ -1440,10 +1506,58 @@ static void shortcut_view_align_toggle(ReadWindow* self)
 
 #pragma region 스냅샷 그리기
 // 텍스쳐를 화면에 맞게 그리기
+// 비동기 로딩 중이면 여기서 메시지를 표시한다
 static void paint_page_fit(ReadWindow* self, GtkSnapshot* snapshot, const PageData* page, int width, int height)
 {
-	if (page == NULL || page->texture == NULL)
-		return; // 텍스쳐가 없으면 그냥 나감
+	if (page == NULL)
+		return; // 쪽 데이터가 없으면 그냥 나감
+
+	if (page->async_loading)
+	{
+		char msg[64];
+		g_snprintf(msg, sizeof(msg), _("Loading page %d..."), page->entry->page + 1);
+		PangoLayout* layout = gtk_widget_create_pango_layout(GTK_WIDGET(self->draw), msg);
+		pango_layout_set_font_description(layout, self->notify_font);
+		int text_width, text_height;
+		pango_layout_get_size(layout, &text_width, &text_height);
+		text_width /= PANGO_SCALE;
+		text_height /= PANGO_SCALE;
+
+		const int padding = 18;
+		const int tex_w = text_width + padding * 2;
+		const int tex_h = text_height + padding * 2;
+
+		// 카이로 서피스에 그리기
+		cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, tex_w, tex_h);
+		cairo_t* cr = cairo_create(surface);
+
+		// 배경 및 테두리 그리기
+		cairo_set_source_rgba(cr, 0.12, 0.12, 0.8, 0.9);
+		cairo_rectangle(cr, 1, 1, tex_w - 1, tex_h - 1);
+		cairo_set_line_width(cr, 5);
+		cairo_set_source_rgba(cr, 0, 1, 1, 1.0);
+		cairo_stroke(cr);
+
+		// 텍스트 그리기
+		cairo_set_source_rgba(cr, 1, 1, 1, 1);
+		cairo_move_to(cr, padding, padding);
+		pango_cairo_show_layout(cr, layout);
+
+		cairo_destroy(cr);
+		g_object_unref(layout);
+
+		// 서피스를 텍스쳐로 바꾸고 스냅샷에 그리기
+		GdkTexture* texture = doumi_texture_from_surface(surface);
+		cairo_surface_destroy(surface);
+
+		if (texture)
+		{
+			const float x = (float)(width - tex_w) / 2.0f;
+			const float y = (float)(height - tex_h) / 2.0f;
+			gtk_snapshot_append_texture(snapshot, texture, &GRAPHENE_RECT_INIT(x, y, (float)tex_w, (float)tex_h));
+			g_object_unref(texture);
+		}
+	}
 
 	const bool zoom = config_get_bool(CONFIG_VIEW_ZOOM, true);
 	const BoundSize ns = bound_size_calc_dest(zoom, width, height, page->info.width, page->info.height);
@@ -1463,7 +1577,8 @@ static void paint_page_fit(ReadWindow* self, GtkSnapshot* snapshot, const PageDa
 		rt.left = rt.right - w;
 	}
 
-	gtk_snapshot_append_texture(snapshot, page->texture, &BOUND_RECT_TO_GRAPHENE_RECT(&rt));
+	if (page->texture)
+		gtk_snapshot_append_texture(snapshot, page->texture, &BOUND_RECT_TO_GRAPHENE_RECT(&rt));
 }
 
 // 텍스쳐 두장을 나란히 화면 중앙에 붙여서 그리기 + 마진 지원
@@ -1685,6 +1800,7 @@ static void read_draw_snapshot(GtkWidget* widget, GtkSnapshot* snapshot)
 ReadWindow* read_window_new(GtkApplication* app)
 {
 	ReadWindow* self = g_new0(ReadWindow, 1);
+	s_read_window = self; // 전역 변수에 저장
 
 	// 첨에 UI 설정할 때 중복 호출 방지
 	bool view_zoom = config_get_bool(CONFIG_VIEW_ZOOM, true);
