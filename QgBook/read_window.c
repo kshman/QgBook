@@ -297,11 +297,6 @@ static void clear_page(ReadWindow* self)
 			g_source_remove(self->pages[0]->anim_timer);
 			self->pages[0]->anim_timer = 0;
 		}
-		if (self->pages[0]->anim_iter)
-		{
-			g_object_unref(self->pages[0]->anim_iter);
-			self->pages[0]->anim_iter = NULL;
-		}
 		self->pages[0] = NULL;
 	}
 
@@ -314,11 +309,6 @@ static void clear_page(ReadWindow* self)
 		{
 			g_source_remove(self->pages[1]->anim_timer);
 			self->pages[1]->anim_timer = 0;
-		}
-		if (self->pages[1]->anim_iter)
-		{
-			g_object_unref(self->pages[1]->anim_iter);
-			self->pages[1]->anim_iter = NULL;
 		}
 		self->pages[1] = NULL;
 	}
@@ -535,9 +525,7 @@ static void cb_animation_load_finish(GObject* source_object, GAsyncResult* res, 
 	{
 		const PageData* cached_data = self->cache_pages[data->entry->page];
 		if (cached_data == data)
-		{
 			data_valid = true;
-		}
 	}
 
 	if (!data_valid)
@@ -549,6 +537,12 @@ static void cb_animation_load_finish(GObject* source_object, GAsyncResult* res, 
 	GError* error = NULL;
 	data->animation = gdk_pixbuf_animation_new_from_stream_finish(res, &error);
 	data->async_loading = false;
+
+	if (data->anim_timer)
+	{
+		g_source_remove(data->anim_timer);
+		data->anim_timer = 0;
+	}
 
 	if (error)
 	{
@@ -562,12 +556,6 @@ static void cb_animation_load_finish(GObject* source_object, GAsyncResult* res, 
 		data->anim_iter = gdk_pixbuf_animation_get_iter(data->animation, NULL);
 		int delay = gdk_pixbuf_animation_iter_get_delay_time(data->anim_iter);
 		if (delay <= 0) delay = 100;
-
-		if (data->anim_timer)
-		{
-			g_source_remove(data->anim_timer);
-			data->anim_timer = 0;
-		}
 
 		data->anim_timer = g_timeout_add(delay, cb_page_anim_timeout, data);
 
@@ -591,7 +579,7 @@ static void cb_animation_load_finish(GObject* source_object, GAsyncResult* res, 
 	}
 
 	// 화면 업데이트
-	bool visible = data == self->pages[0] || data == self->pages[1];
+	const bool visible = data == self->pages[0] || data == self->pages[1];
 	if (!visible)
 		gtk_widget_queue_draw(self->draw);
 }
@@ -626,16 +614,6 @@ static void read_page(ReadWindow* self, PageData* data)
 	{
 		g_source_remove(data->anim_timer);
 		data->anim_timer = 0;
-	}
-	if (data->anim_iter)
-	{
-		g_object_unref(data->anim_iter);
-		data->anim_iter = NULL;
-	}
-	if (data->animation)
-	{
-		g_object_unref(data->animation);
-		data->animation = NULL;
 	}
 
 	// 비동기 로딩을 위해 기존 텍스처를 보존하지 않고 즉시 해제
@@ -712,22 +690,12 @@ static PageData* try_page_read_or_cache_data(ReadWindow* self, const int page)
 			{
 				dest_size -= item->info.size;
 
-				// 4. 리소스 누수 방지 - 캐시에서 제거할 때 애니메이션 리소스도 정리
 				if (item->anim_timer)
 				{
 					g_source_remove(item->anim_timer);
 					item->anim_timer = 0;
 				}
-				if (item->anim_iter)
-				{
-					g_object_unref(item->anim_iter);
-					item->anim_iter = NULL;
-				}
-				if (item->animation)
-				{
-					g_object_unref(item->animation);
-					item->animation = NULL;
-				}
+
 				// 비동기 로딩이 진행 중인 경우 플래그 해제
 				item->async_loading = false;
 
@@ -901,7 +869,6 @@ static void page_control(ReadWindow* self, BookControl c)
 			g_assert_not_reached(); // 잘못된 컨트롤
 	}
 
-	prepare_pages(self);
 	queue_draw_book(self);
 }
 
@@ -1679,6 +1646,35 @@ static void paint_texture_dual(
 // 비동기 메시지 및 보관 텍스쳐 그리기
 static void paint_async_load_info(ReadWindow* self, GtkSnapshot* snapshot, int width, int height)
 {
+	GdkTexture* l = self->keep_texture[0];
+	GdkTexture* r = self->keep_texture[1];
+
+	if (l != NULL && r != NULL)
+	{
+		const ViewMode mode = (ViewMode)config_get_int(CONFIG_VIEW_MODE, true);
+		if (mode == VIEW_MODE_RIGHT_TO_LEFT)
+		{
+			GdkTexture* tmp = l;
+			l = r;
+			r = tmp;
+		}
+		paint_texture_dual(
+			self, snapshot, width, height,
+			l, gdk_texture_get_width(l), gdk_texture_get_height(l),
+			r, gdk_texture_get_width(r), gdk_texture_get_height(r));
+	}
+	else
+	{
+		GdkTexture* t = l ? l : r;
+		if (t != NULL)
+			paint_texture_fit(
+				self, snapshot, width, height, t,
+				gdk_texture_get_width(t), gdk_texture_get_height(t));
+	}
+
+	const GdkRGBA overlay_color = { 0.0f, 0.0f, 0.0f, 0.5f }; // 30% 반투명 검은색
+	gtk_snapshot_append_color(snapshot, &overlay_color, &GRAPHENE_RECT_INIT(0, 0, (float)width, (float)height));
+
 	// 메시지
 	char msg[64];
 	g_snprintf(msg, sizeof(msg), _("Loading page %d..."), self->book->cur_page + 1);
