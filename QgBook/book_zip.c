@@ -20,11 +20,11 @@ typedef struct BookZip
 
 // 내부 함수 선언
 static void bz_dispose(Book* book);
-static GBytes *bz_read_data(Book* book, int page);
+static GBytes* bz_read_data(Book* book, int page);
 static bool bz_can_delete(Book* book);
 static bool bz_delete(Book* book);
 static bool bz_move(Book* book, const char* move_filename);
-static gchar *bz_rename(Book* book, const char* new_filename);
+static gchar* bz_rename(Book* book, const char* new_filename);
 
 /**
  * @brief ZIP책(BookZip)용 함수 테이블
@@ -47,7 +47,7 @@ static BookFunc bz_func =
  * @param zip_path ZIP 파일 경로
  * @return 생성된 Book 객체 포인터, 실패 시 NULL
  */
-Book *book_zip_new(const char* zip_path)
+Book* book_zip_new(const char* zip_path)
 {
 	// 먼저 ZIP파일 부터 확인
 	int err = 0;
@@ -76,7 +76,7 @@ Book *book_zip_new(const char* zip_path)
 		if (!doumi_is_image_file(s.name))
 			continue; // 이미지 파일이 아님
 
-		 // 페이지 엔트리(PageEntry) 생성 및 추가
+		// 페이지 엔트리(PageEntry) 생성 및 추가
 		PageEntry* e = g_new0(PageEntry, 1);
 		e->page = (int)bz->base.entries->len;
 		e->manage = (int)i;
@@ -88,7 +88,7 @@ Book *book_zip_new(const char* zip_path)
 	}
 
 	bz->zip = zip;
-	bz->base.total_page = (int)count;
+	bz->base.total_page = (int)count - 1;
 
 	return (Book*)bz;
 }
@@ -112,7 +112,7 @@ static void bz_dispose(Book* book)
  * @param page 읽을 페이지 번호
  * @return 페이지 데이터(GBytes), 실패 시 NULL
  */
-static GBytes *bz_read_data(Book* book, int page)
+static GBytes* bz_read_data(Book* book, int page)
 {
 	BookZip* bz = (BookZip*)book;
 
@@ -237,7 +237,7 @@ static bool bz_move(Book* book, const char* move_filename)
  * @param new_filename 새 파일명(경로 제외)
  * @return 새 경로 문자열(호출자가 해제 필요), 실패 시 NULL
  */
-static gchar *bz_rename(Book* book, const char* new_filename)
+static gchar* bz_rename(Book* book, const char* new_filename)
 {
 	gchar* new_path = g_build_filename(book->dir_name, new_filename, NULL);
 

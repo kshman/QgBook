@@ -1,5 +1,18 @@
 ﻿#pragma once
 
+// 이미지 파일 형식
+typedef enum ImageFileType
+{
+	IMAGE_FILE_TYPE_UNKNOWN,
+	IMAGE_FILE_TYPE_JPEG,
+	IMAGE_FILE_TYPE_PNG,
+	IMAGE_FILE_TYPE_GIF,
+	IMAGE_FILE_TYPE_BMP,
+	IMAGE_FILE_TYPE_TIFF,
+	IMAGE_FILE_TYPE_WEBP,
+	IMAGE_FILE_TYPE_MAX_VALUE,
+} ImageFileType;
+
 // 수평 정렬 방식을 나타내는 열거형입니다.
 typedef enum HorizAlign
 {
@@ -47,3 +60,12 @@ typedef enum BookControl
 	BOOK_CTRL_MAX_VALUE,
 } BookControl;
 
+// 이미지 정보
+typedef struct ImageInfo
+{
+	ImageFileType type;  // 이미지 파일 형식
+	int width;           // 이미지 폭
+	int height;          // 이미지 높이
+	size_t size;         // 이미지 크기(바이트)
+	bool has_anim;       // 애니메이션 여부
+} ImageInfo;

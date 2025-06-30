@@ -729,11 +729,11 @@ void config_set_long(ConfigKeys name, gint64 value, bool cache_only)
  * @brief 실제 최대 페이지 캐시 크기를 바이트 단위로 반환합니다.
  * @return 최대 캐시 크기(바이트)
  */
-uint64_t config_get_actual_max_page_cache(void)
+size_t config_get_actual_max_page_cache(void)
 {
 	const ConfigCacheItem* item = cache_get_item(CONFIG_GENERAL_MAX_PAGE_CACHE);
-	int mb = item ? item->n : 230; // 원래 defs에서 가져와야 하는데 귀찮다
-	return (uint64_t)mb * 1024ULL * 1024ULL; // MB 단위로 변환
+	const size_t mb = item ? item->n : 230; // 원래 defs에서 가져와야 하는데 귀찮다
+	return (size_t)mb * 1024ULL * 1024ULL; // MB 단위로 변환
 }
 
 /**
