@@ -9,7 +9,7 @@
  *        다양한 환경설정 및 관련 데이터베이스 연동을 담당하는 구현 파일입니다.
  */
 
-// 외부 변수 선언
+ // 외부 변수 선언
 extern ConfigDefinition config_defs[CONFIG_MAX_VALUE];
 extern ShortcutDefinition shortcut_defs[];
 
@@ -28,10 +28,6 @@ static struct Configs
 	GHashTable* shortcut;      ///< 단축키 해시
 	GHashTable* cache;         ///< 설정 캐시 해시
 	GPtrArray* moves;          ///< 책 이동 위치 배열
-
-	GPtrArray* nears;          ///< 근처 파일 배열
-	NearExtentionCompare near_compare; ///< 근처 파일 비교 함수
-	char* near_dir;            ///< 근처 파일 디렉토리
 } cfgs =
 {
 	.app_path = NULL,
@@ -74,7 +70,7 @@ static void cache_item_free(gpointer ptr)
  * @param key 설정 키
  * @return ConfigCacheItem 포인터(없으면 NULL)
  */
-static ConfigCacheItem *cache_get_item(const ConfigKeys key)
+static ConfigCacheItem* cache_get_item(const ConfigKeys key)
 {
 	const struct ConfigDefinition* def = &config_defs[key];
 	return g_hash_table_lookup(cfgs.cache, def->name);
@@ -101,7 +97,7 @@ static void cache_set_item(const ConfigKeys key, const ConfigCacheItem* item)
  * @param value_size 버퍼 크기
  * @return 문자열 포인터(문자열 타입이면 내부 포인터, 아니면 value)
  */
-static const char *cache_auto_get_item(const ConfigKeys key, char* value, const size_t value_size)
+static const char* cache_auto_get_item(const ConfigKeys key, char* value, const size_t value_size)
 {
 	const struct ConfigDefinition* def = &config_defs[key];
 	const ConfigCacheItem* item = g_hash_table_lookup(cfgs.cache, def->name);
@@ -198,7 +194,7 @@ static void sql_free_error(char* err_msg)
  * @brief 설정 DB를 엽니다.
  * @return sqlite3 포인터(실패 시 NULL)
  */
-static sqlite3 *sql_open(void)
+static sqlite3* sql_open(void)
 {
 	sqlite3* db;
 	if (sqlite3_open(cfgs.cfg_path, &db) == SQLITE_OK)
@@ -457,8 +453,8 @@ bool config_init(void)
 
 	if (!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS configs (key TEXT PRIMARY KEY, value TEXT);") ||
 		!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS moves (no INTEGER PRIMARY KEY, alias TEXT, folder TEXT);") ||
-		!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS recently (filename TEXT PRIMARY KEY, page INTEGER);") ||
-		!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS bookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT, page INTEGER);") ||
+		!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS history (filename TEXT PRIMARY KEY, page INTEGER, updated TEXT);") ||
+		!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS bookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT, page INTEGER, created TEXT);") ||
 		!sql_exec_stmt(db, "CREATE TABLE IF NOT EXISTS shortcuts (id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, alias TEXT);"))
 	{
 		sqlite3_close(db);
@@ -484,9 +480,6 @@ bool config_init(void)
 	// 이동 위치
 	cfgs.moves = g_ptr_array_new_with_free_func(move_loc_free);
 
-	// 근처 파일
-	cfgs.nears = g_ptr_array_new_with_free_func(g_free);
-
 	// ㅇㅋ
 	sqlite3_close(db);
 	return true;
@@ -510,11 +503,6 @@ void config_dispose(void)
 
 		sqlite3_close(db);
 	}
-
-	if (cfgs.near_dir)
-		g_free(cfgs.near_dir);
-	if (cfgs.nears)
-		g_ptr_array_free(cfgs.nears, true);
 
 	if (cfgs.moves)
 		g_ptr_array_free(cfgs.moves, true);
@@ -592,7 +580,7 @@ void config_load_cache(void)
  * @param cache_only true면 캐시만, false면 DB도 조회
  * @return ConfigCacheItem 포인터
  */
-static const ConfigCacheItem *config_get_item(ConfigKeys key, bool cache_only)
+static const ConfigCacheItem* config_get_item(ConfigKeys key, bool cache_only)
 {
 	if (key <= CONFIG_NONE || key >= CONFIG_MAX_VALUE)
 		return NULL;
@@ -607,7 +595,7 @@ static const ConfigCacheItem *config_get_item(ConfigKeys key, bool cache_only)
  * @param cache_only true면 캐시만, false면 DB도 조회
  * @return 문자열 포인터(없으면 NULL)
  */
-const char *config_get_string_ptr(ConfigKeys name, bool cache_only)
+const char* config_get_string_ptr(ConfigKeys name, bool cache_only)
 {
 	const ConfigCacheItem* item = config_get_item(name, cache_only);
 	return item == NULL || item->type != CACHE_TYPE_STRING ? NULL : item->s;
@@ -689,7 +677,7 @@ void config_set_string(ConfigKeys name, const char* value, bool cache_only)
 void config_set_bool(ConfigKeys name, bool value, bool cache_only)
 {
 	g_return_if_fail(name > CONFIG_NONE && name < CONFIG_MAX_VALUE);
-	const ConfigCacheItem item = {.b = value, .type = CACHE_TYPE_BOOL};
+	const ConfigCacheItem item = { .b = value, .type = CACHE_TYPE_BOOL };
 	cache_set_item(name, &item);
 	if (!cache_only)
 		sql_set_config(name);
@@ -704,7 +692,7 @@ void config_set_bool(ConfigKeys name, bool value, bool cache_only)
 void config_set_int(ConfigKeys name, gint32 value, bool cache_only)
 {
 	g_return_if_fail(name > CONFIG_NONE && name < CONFIG_MAX_VALUE);
-	const ConfigCacheItem item = {.n = value, .type = CACHE_TYPE_INT};
+	const ConfigCacheItem item = { .n = value, .type = CACHE_TYPE_INT };
 	cache_set_item(name, &item);
 	if (!cache_only)
 		sql_set_config(name);
@@ -719,7 +707,7 @@ void config_set_int(ConfigKeys name, gint32 value, bool cache_only)
 void config_set_long(ConfigKeys name, gint64 value, bool cache_only)
 {
 	g_return_if_fail(name > CONFIG_NONE && name < CONFIG_MAX_VALUE);
-	const ConfigCacheItem item = {.l = value, .type = CACHE_TYPE_LONG};
+	const ConfigCacheItem item = { .l = value, .type = CACHE_TYPE_LONG };
 	cache_set_item(name, &item);
 	if (!cache_only)
 		sql_set_config(name);
@@ -749,7 +737,7 @@ int recently_get_page(const char* filename)
 	g_return_val_if_fail(db != NULL, 0);
 
 	sqlite3_stmt* stmt;
-	const char* sql = "SELECT page FROM recently WHERE filename = ? LIMIT 1;";
+	const char* sql = "SELECT page FROM history WHERE filename = ? LIMIT 1;";
 	if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK)
 	{
 		sql_error(db, true);
@@ -782,7 +770,7 @@ bool recently_set_page(const char* filename, int page)
 	if (page <= 0)
 	{
 		// 삭제
-		const char* sql = "DELETE FROM recently WHERE filename = ?;";
+		const char* sql = "DELETE FROM history WHERE filename = ?;";
 		if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK)
 		{
 			sql_error(db, true);
@@ -793,7 +781,7 @@ bool recently_set_page(const char* filename, int page)
 	else
 	{
 		// 업데이트
-		const char* sql = "INSERT OR REPLACE INTO recently (filename, page) VALUES (?, ?);";
+		const char* sql = "INSERT OR REPLACE INTO history (filename, page, updated) VALUES (?, ?, datetime('now', 'localtime'));";
 		if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK)
 		{
 			sql_error(db, true);
@@ -924,7 +912,7 @@ bool movloc_swap(int from, int to)
  * @brief 책 이동 위치 배열을 반환합니다.
  * @return GPtrArray 포인터
  */
-GPtrArray *movloc_get_all_ptr(void)
+GPtrArray* movloc_get_all_ptr(void)
 {
 	return cfgs.moves;
 }
@@ -984,7 +972,7 @@ static gint compare_natural_filename(const void* pa, const void* pb)
 
 #ifndef _WIN32
 	// 윈도우가 아닌 OS의 비교. UTF-8, 숫자 인식
-	const char *pa_ptr = a, *pb_ptr = b;
+	const char* pa_ptr = a, * pb_ptr = b;
 	while (*pa_ptr && *pb_ptr)
 	{
 		// 숫자 구간 비교
@@ -1062,29 +1050,21 @@ static gint compare_natural_filename(const void* pa, const void* pb)
 }
 
 /**
- * @brief 근처 파일 목록을 빌드합니다.
+ * @brief 근처 파일 목록을 빌드하여 배열로 반환합니다.
  * @param dir 디렉토리 경로
  * @param compare 확장자 비교 함수
- * @return 성공 시 true
+ * @return GPtrArray 포인터
  */
-bool nears_build(const char* dir, NearExtentionCompare compare)
+static GPtrArray* nears_build_array(const char* dir, NearExtentionCompare compare)
 {
 	if (dir == NULL || compare == NULL)
-		return false; // 디렉토리나 비교 함수가 NULL이면 실패
-
-	if (cfgs.near_compare == compare && g_strcmp0(cfgs.near_dir, dir) == 0)
-		return true; // 같은 디렉토리 & 비교 함수가 같으면 아무것도 안함
+		return NULL; // 디렉토리나 비교 함수가 NULL이면 실패
 
 	GDir* gd = g_dir_open(dir, 0, NULL);
 	if (gd == NULL)
-		return false; // 디렉토리 열기 실패
+		return NULL; // 디렉토리 열기 실패
 
-	if (cfgs.near_dir)
-		g_free(cfgs.near_dir);
-	cfgs.near_dir = g_strdup(dir);
-	cfgs.near_compare = compare;
-	g_ptr_array_set_size(cfgs.nears, 0);
-
+	GPtrArray* nears = g_ptr_array_new_with_free_func(g_free);
 	const char* name;
 	while ((name = g_dir_read_name(gd)) != NULL)
 	{
@@ -1092,7 +1072,7 @@ bool nears_build(const char* dir, NearExtentionCompare compare)
 			continue;
 		char* fullpath = g_build_filename(dir, name, NULL);
 		if (g_file_test(fullpath, G_FILE_TEST_IS_REGULAR) && compare(name))
-			g_ptr_array_add(cfgs.nears, fullpath);
+			g_ptr_array_add(nears, fullpath);
 		else
 			g_free(fullpath);
 	}
@@ -1100,155 +1080,132 @@ bool nears_build(const char* dir, NearExtentionCompare compare)
 	g_dir_close(gd);
 
 	// 자연스러운 정렬 적용
-	g_ptr_array_sort(cfgs.nears, compare_natural_filename);
-
-	return true;
+	g_ptr_array_sort(nears, compare_natural_filename);
+	return nears;
 }
 
 /**
- * @brief 지정한 파일이 없으면 근처 파일을 빌드합니다.
+ * @brief 지정 파일의 앞쪽 근처 파일을 얻습니다. (디렉토리 및 비교 함수 지정)
+ * @param fullpath 기준 파일 경로
  * @param dir 디렉토리 경로
  * @param compare 확장자 비교 함수
- * @param fullpath 확인할 파일 경로
- * @return 성공 시 true
+ * @return 앞쪽 파일 경로(없으면 NULL, NULL이 아니면 반환값 g_free할 것)
  */
-bool nears_build_if(const char* dir, NearExtentionCompare compare, const char* fullpath)
+char* nears_find_prev(const char* fullpath, const char* dir, NearExtentionCompare compare)
 {
-	if (fullpath && *fullpath != '\0')
+	g_return_val_if_fail(fullpath != NULL && dir != NULL && compare != NULL, NULL);
+	GPtrArray* nears = nears_build_array(dir, compare);
+	g_return_val_if_fail(nears != NULL, NULL);
+	char* ret = NULL;
+	for (guint i = 0; i < nears->len; ++i)
 	{
-		for (guint i = 0; i < cfgs.nears->len; ++i)
-		{
-			const char* item = g_ptr_array_index(cfgs.nears, i);
-			if (g_strcmp0(item, fullpath) == 0)
-				return true; // 이미 근처 파일에 있으면 아무것도 안함
-		}
-	}
-
-	cfgs.near_compare = NULL;	// 현재 비교 함수 초기화 -> 강제로 빌드
-	return nears_build(dir, compare);
-}
-
-/**
- * @brief 지정 파일의 앞쪽 근처 파일을 얻습니다.
- * @param fullpath 기준 파일 경로
- * @return 이전 파일 경로(없으면 NULL)
- */
-const char *nears_get_prev(const char* fullpath)
-{
-	g_return_val_if_fail(fullpath != NULL, NULL);
-	for (guint i = 0; i < cfgs.nears->len; ++i)
-	{
-		const char* near_file = g_ptr_array_index(cfgs.nears, i);
+		const char* near_file = g_ptr_array_index(nears, i);
 		if (g_strcmp0(near_file, fullpath) != 0)
 			continue; // 자기 자신이 아니면 계속
-		if (i == 0)
-			return NULL; // 첫번째면 이전이 없음
-		return g_ptr_array_index(cfgs.nears, i - 1);
+		ret = i == 0 ? NULL : g_strdup(g_ptr_array_index(nears, i - 1));
+		break;
 	}
-	return NULL;
+	g_ptr_array_free(nears, true);
+	return ret;
 }
 
 /**
- * @brief 지정 파일의 뒤쪽 근처 파일을 얻습니다.
+ * @brief 지정 파일의 뒤쪽 근처 파일을 얻습니다. (디렉토리 및 비교 함수 지정)
  * @param fullpath 기준 파일 경로
- * @return 다음 파일 경로(없으면 NULL)
+ * @param dir 디렉토리 경로
+ * @param compare 확장자 비교 함수
+ * @return 뒤쪽 파일 경로(없으면 NULL, NULL이 아니면 반환값 g_free할 것)
  */
-const char *nears_get_next(const char* fullpath)
+char* nears_find_next(const char* fullpath, const char* dir, NearExtentionCompare compare)
 {
-	g_return_val_if_fail(fullpath != NULL, NULL);
-	for (guint i = 0; i < cfgs.nears->len; ++i)
+	g_return_val_if_fail(fullpath != NULL && dir != NULL && compare != NULL, NULL);
+	GPtrArray* nears = nears_build_array(dir, compare);
+	g_return_val_if_fail(nears != NULL, NULL);
+	char* ret = NULL;
+	for (guint i = 0; i < nears->len; ++i)
 	{
-		const char* near_file = g_ptr_array_index(cfgs.nears, i);
+		const char* near_file = g_ptr_array_index(nears, i);
 		if (g_strcmp0(near_file, fullpath) != 0)
 			continue; // 자기 자신이 아니면 계속
-		if (i + 1 >= cfgs.nears->len)
-			return NULL; // 마지막이면 다음이 없음
-		return g_ptr_array_index(cfgs.nears, i + 1);
+		ret = (i + 1 >= nears->len) ? NULL : g_strdup(g_ptr_array_index(nears, i + 1));
+		break;
 	}
-	return NULL;
+	g_ptr_array_free(nears, true);
+	return ret;
 }
 
 /**
- * @brief 지정 파일을 제외한 임의의 근처 파일을 얻습니다.
+ * @brief 지정 파일을 제외한 임의의 근처 파일을 얻습니다. (디렉토리 및 비교 함수 지정)
  * @param fullpath 기준 파일 경로
- * @return 임의의 파일 경로(없으면 NULL)
+ * @param dir 디렉토리 경로
+ * @param compare 확장자 비교 함수
+ * @return 임의의 파일 경로(없으면 NULL, NULL이 아니면 반환값 g_free할 것)
  */
-const char *nears_get_random(const char* fullpath)
+char* nears_find_random(const char* fullpath, const char* dir, NearExtentionCompare compare)
 {
-	g_return_val_if_fail(fullpath != NULL, NULL);
-	if (cfgs.nears->len <= 1) // 자기 자신만 있거나 근처 파일이 없으면
+	g_return_val_if_fail(fullpath != NULL && dir != NULL && compare != NULL, NULL);
+	GPtrArray* nears = nears_build_array(dir, compare);
+	g_return_val_if_fail(nears != NULL, NULL);
+	if (nears->len <= 1) // 자기 자신만 있거나 근처 파일이 없으면
+	{
+		g_ptr_array_free(nears, true);
 		return NULL;
-	guint index = g_random_int_range(0, (gint)cfgs.nears->len);
+	}
+	guint index = g_random_int_range(0, (gint)nears->len);
+	char* ret;
 	while (true)
 	{
-		const char* near_file = g_ptr_array_index(cfgs.nears, index);
+		const char* near_file = g_ptr_array_index(nears, index);
 		if (g_strcmp0(near_file, fullpath) != 0) // 자기 자신이 아니면 반환
-			return near_file;
-		index = (index + 1) % cfgs.nears->len; // 다음 인덱스로 이동
+		{
+			ret = g_strdup(near_file);
+			break;
+		}
+		index = (index + 1) % nears->len; // 다음 인덱스로 이동
 	}
+	g_ptr_array_free(nears, true);
+	return ret;
 }
 
 /**
- * @brief 지정 파일을 삭제하고 근처 파일을 얻습니다.
+ * @brief 지정 파일의 근처 파일을 얻습니다. (디렉토리 및 비교 함수 지정)
+ *        첫번째 항목이면 두번째 항목, 중간 항목이면 다음 항목, 마지막 항목이면 이전 항목 반환
  * @param fullpath 기준 파일 경로
- * @return 남은 파일 경로(없으면 NULL)
+ * @param dir 디렉토리 경로
+ * @param compare 확장자 비교 함수
+ * @return 근처 파일 경로(없으면 NULL, NULL이 아니면 반환값 g_free할 것)
  */
-const char *nears_get_for_remove(const char* fullpath)
+char* nears_find_any(const char* fullpath, const char* dir, NearExtentionCompare compare)
 {
-	g_return_val_if_fail(fullpath != NULL, NULL);
-	if (cfgs.nears->len == 1)
+	g_return_val_if_fail(fullpath != NULL && dir != NULL && compare != NULL, NULL);
+	GPtrArray* nears = nears_build_array(dir, compare);
+	g_return_val_if_fail(nears != NULL, NULL);
+	char* ret = NULL;
+	for (guint i = 0; i < nears->len; ++i)
 	{
-		g_ptr_array_set_size(cfgs.nears, 0); // 자기 자신만 있으면 비움
-		return NULL;
-	}
-	for (guint i = 0; i < cfgs.nears->len; ++i)
-	{
-		const char* near_file = g_ptr_array_index(cfgs.nears, i);
+		const char* near_file = g_ptr_array_index(nears, i);
 		if (g_strcmp0(near_file, fullpath) != 0)
 			continue; // 자기 자신이 아니면 계속
-		const char* ret;
 		if (i == 0)
-			ret = g_ptr_array_index(cfgs.nears, 1); // 첫번째면 두번째를 넘김
-		else if (i + 1 < cfgs.nears->len)
-			ret = g_ptr_array_index(cfgs.nears, i + 1); // 다음 파일을 넘김
+		{
+			// 첫번째 항목이면 두번째 항목 반환
+			if (nears->len > 1)
+				ret = g_strdup(g_ptr_array_index(nears, 1));
+		}
+		else if (i + 1 < nears->len)
+		{
+			// 중간 항목이면 다음 항목 반환
+			ret = g_strdup(g_ptr_array_index(nears, i + 1));
+		}
 		else
-			ret = g_ptr_array_index(cfgs.nears, i - 1); // 마지막이면 이전 파일을 넘김
-		g_ptr_array_remove_index(cfgs.nears, i); // 자기 자신을 제거
-		return ret;
+		{
+			// 마지막 항목이면 이전 항목 반환
+			ret = g_strdup(g_ptr_array_index(nears, i - 1));
+		}
+		break;
 	}
-	return NULL;
-}
-
-/**
- * @brief 지정 파일을 삭제하고 새 항목을 추가하며 근처 파일을 얻습니다.
- * @param fullpath 기준 파일 경로
- * @param new_filename 새 파일 이름
- * @return 남은 파일 경로(없으면 NULL)
- */
-const char *nears_get_for_rename(const char* fullpath, const char* new_filename)
-{
-	g_return_val_if_fail(fullpath != NULL && new_filename != NULL, NULL);
-	// 먼저 새 파일 이름을 추가하고
-	char* dup_filename = g_strdup(new_filename);
-	g_ptr_array_add(cfgs.nears, dup_filename);
-	// 이제 항목이 2개일 테니 루프로 확인
-	for (guint i = 0; i < cfgs.nears->len; ++i)
-	{
-		const char* near_file = g_ptr_array_index(cfgs.nears, i);
-		if (g_strcmp0(near_file, fullpath) != 0)
-			continue; // 자기 자신이 아니면 계속
-		const char* ret;
-		if (i == 0)
-			ret = g_ptr_array_index(cfgs.nears, 1); // 첫번째면 두번째를 넘김
-		else if (i + 1 < cfgs.nears->len)
-			ret = g_ptr_array_index(cfgs.nears, i + 1); // 다음 파일을 넘김
-		else
-			ret = g_ptr_array_index(cfgs.nears, i - 1); // 마지막이면 이전 파일을 넘김
-		g_ptr_array_remove_index(cfgs.nears, i); // 자기 자신을 제거
-		return ret;
-	}
-	// 여기까지.. 온다고? 그냥 새 파일 이름을 반환
-	return dup_filename;
+	g_ptr_array_free(nears, true);
+	return ret;
 }
 
 /**
@@ -1278,14 +1235,14 @@ static GdkModifierType parse_modifier(const char* name)
  * @param alias 단축키 문자열
  * @return 변환된 값(gint64 포인터, 실패 시 NULL)
  */
-static gint64 *convert_shortcut(const char* alias)
+static gint64* convert_shortcut(const char* alias)
 {
 	if (!alias || !*alias)
 		return NULL;
 
 	GdkModifierType mods = 0;
 	const char* p = alias;
-	char keyname[64] = {0};
+	char keyname[64] = { 0 };
 	size_t keyname_len = 0;
 
 	// 파싱: <Modifier>들 먼저
@@ -1386,7 +1343,7 @@ void shortcut_register(void)
  * @param key_state modifier 상태
  * @return 단축키 명령 문자열(없으면 NULL)
  */
-const char *shortcut_lookup(const guint key_val, const GdkModifierType key_state)
+const char* shortcut_lookup(const guint key_val, const GdkModifierType key_state)
 {
 	const gint64 key = ((gint64)key_state << 32) | key_val; // 상위 32비트에 상태, 하위 32비트에 키값
 	const char* action = g_hash_table_lookup(cfgs.shortcut, &key);
@@ -1398,7 +1355,7 @@ const char *shortcut_lookup(const guint key_val, const GdkModifierType key_state
  * @param key 언어 키
  * @return 번역 문자열(없으면 key 자체 반환)
  */
-const char *locale_lookup(const char* key)
+const char* locale_lookup(const char* key)
 {
 	const char* lookup = g_hash_table_lookup(cfgs.lang, key);
 	return lookup ? lookup : key;
