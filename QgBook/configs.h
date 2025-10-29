@@ -112,13 +112,10 @@ extern void movloc_commit(void);
 
 
 // 근처 파일
-extern bool nears_build(const char* dir, NearExtentionCompare compare);
-extern bool nears_build_if(const char* dir, NearExtentionCompare compare, const char* fullpath);
-extern const char* nears_get_prev(const char* fullpath);
-extern const char* nears_get_next(const char* fullpath);
-extern const char* nears_get_random(const char* fullpath);
-extern const char* nears_get_for_remove(const char* fullpath);
-extern const char* nears_get_for_rename(const char* fullpath, const char* new_filename);
+extern char* nears_find_prev(const char* fullpath, const char* dir, NearExtentionCompare compare);
+extern char* nears_find_next(const char* fullpath, const char* dir, NearExtentionCompare compare);
+extern char* nears_find_random(const char* fullpath, const char* dir, NearExtentionCompare compare);
+extern char* nears_find_any(const char* fullpath, const char* dir, NearExtentionCompare compare);
 
 
 // 단축키

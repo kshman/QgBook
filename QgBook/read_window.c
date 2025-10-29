@@ -777,54 +777,56 @@ static void prepare_pages(ReadWindow* self)
 // 쪽 조정
 static void page_control(ReadWindow* self, BookControl c)
 {
-	if (self->book == NULL)
+	Book* book = self->book;
+
+	if (book == NULL)
 		return;
 
 	switch (c) // NOLINT(clang-diagnostic-switch-enum)
 	{
 		case BOOK_CTRL_PREV:
-			if (!book_move_prev(self->book, self->view_pages))
+			if (!book_move_prev(book, self->view_pages))
 				return;
 			break;
 
 		case BOOK_CTRL_NEXT:
-			if (!book_move_next(self->book, self->view_pages))
+			if (!book_move_next(book, self->view_pages))
 				return;
 			break;
 
 		case BOOK_CTRL_FIRST:
-			book_move_page(self->book, 0);
+			book_move_page(book, 0);
 			break;
 
 		case BOOK_CTRL_LAST:
-			book_move_page(self->book, INT_MAX);
+			book_move_page(book, INT_MAX);
 			break;
 
 		case BOOK_CTRL_10_PREV:
-			book_move_page(self->book, self->book->cur_page - 10);
+			book_move_page(book, book->cur_page - 10);
 			break;
 
 		case BOOK_CTRL_10_NEXT:
-			book_move_page(self->book, self->book->cur_page + 10);
+			book_move_page(book, book->cur_page + 10);
 			break;
 
 		case BOOK_CTRL_MINUS:
-			book_move_page(self->book, self->book->cur_page - 1);
+			book_move_page(book, book->cur_page - 1);
 			break;
 
 		case BOOK_CTRL_PLUS:
-			book_move_page(self->book, self->book->cur_page + 1);
+			book_move_page(book, book->cur_page + 1);
 			break;
 
 		case BOOK_CTRL_SCAN_PREV:
 		{
-			nears_build(self->book->dir_name, self->book->func.ext_compare);
-			const char* prev = nears_get_prev(self->book->full_name);
+			char* prev = nears_find_prev(book->full_name, book->dir_name, book->func.ext_compare);
 			if (prev == NULL)
 				notify(self, 0, _("No previous book found"));
 			else
 			{
 				GFile* file = g_file_new_for_path(prev);
+				g_free(prev);
 				open_book(self, file);
 				g_object_unref(file);
 			}
@@ -833,13 +835,13 @@ static void page_control(ReadWindow* self, BookControl c)
 
 		case BOOK_CTRL_SCAN_NEXT:
 		{
-			nears_build(self->book->dir_name, self->book->func.ext_compare);
-			const char* next = nears_get_next(self->book->full_name);
+			char* next = nears_find_next(book->full_name, book->dir_name, book->func.ext_compare);
 			if (next == NULL)
 				notify(self, 0, _("No next book found"));
 			else
 			{
 				GFile* file = g_file_new_for_path(next);
+				g_free(next);
 				open_book(self, file);
 				g_object_unref(file);
 			}
@@ -848,13 +850,13 @@ static void page_control(ReadWindow* self, BookControl c)
 
 		case BOOK_CTRL_SCAN_RANDOM:
 		{
-			nears_build(self->book->dir_name, self->book->func.ext_compare);
-			const char* random = nears_get_random(self->book->full_name);
+			char* random = nears_find_random(book->full_name, book->dir_name, book->func.ext_compare);
 			if (random == NULL)
 				notify(self, 0, _("No random book found"));
 			else
 			{
 				GFile* file = g_file_new_for_path(random);
+				g_free(random);
 				open_book(self, file);
 				g_object_unref(file);
 			}
@@ -1284,11 +1286,11 @@ static void cb_delete_book_done(gpointer sender, bool ret)
 	if (!ret)
 		return; // 취소
 
-	// 책 지우기 전에 근처 파일을 만들어 놔야 한다
-	nears_build(self->book->dir_name, self->book->func.ext_compare);
+	Book* book = self->book;
+	char* next = nears_find_any(book->full_name, book->dir_name, book->func.ext_compare);
 
 	// 실제 지움
-	if (!book_delete(self->book))
+	if (!book_delete(book))
 	{
 		notify(self, 0, _("Failed to delete book"));
 		return;
@@ -1296,10 +1298,9 @@ static void cb_delete_book_done(gpointer sender, bool ret)
 
 	// 책이 지워졌으므로 페이지는 0으로 초기화.
 	// 어짜피 close_book에서 저장하므로 페이지만 0으로 하면 된다
-	self->book->cur_page = 0;
+	book->cur_page = 0;
 
 	// 다음 책으로 넘어가보자
-	const char* next = nears_get_for_remove(self->book->full_name);
 	if (next == NULL)
 	{
 		// 다음 책이 없으면 그냥 닫기
@@ -1309,6 +1310,7 @@ static void cb_delete_book_done(gpointer sender, bool ret)
 	else
 	{
 		GFile* file = g_file_new_for_path(next);
+		g_free(next);
 		open_book(self, file);
 		g_object_unref(file);
 	}
@@ -1350,27 +1352,44 @@ static void cb_rename_book_done(gpointer sender, const char* filename, bool reop
 	if (!filename || *filename == '\0')
 		return;
 
-	if (g_strcmp0(filename, self->book->base_name) == 0)
+	Book* book = self->book;
+	char* next = nears_find_any(book->full_name, book->dir_name, book->func.ext_compare);
+
+	if (g_strcmp0(filename, book->base_name) == 0)
 		return;
 
-	// 이름 바꾸기 전에 근처 파일을 만들어 놔야 한다
-	nears_build(self->book->dir_name, self->book->func.ext_compare);
-
-	char* new_filename = book_rename(self->book, filename);
+	char* new_filename = book_rename(book, filename);
 	if (new_filename == NULL)
 	{
 		notify(self, 0, _("Failed to rename book"));
 		return;
 	}
 
-	self->book->cur_page = 0; // 페이지는 초기화
+	book->cur_page = 0; // 페이지는 초기화
 
-	const char* next = nears_get_for_rename(self->book->full_name, new_filename);
 	g_free(new_filename);
 
-	GFile* file = g_file_new_for_path(next);
-	open_book(self, file);
-	g_object_unref(file);
+	if (next == NULL)
+	{
+		// 이 경우는 파일이 1개 밖에 없어서 다음 파일을 찾지 못한 경우이다
+		// 현재 파일의 바뀐 이름으로 다시 연다
+		// 인데 귀찮아서 그냥 랜덤. 어짜피 1개면 바뀐 이름이 걸리겠지
+		next = nears_find_random(book->full_name, book->dir_name, book->func.ext_compare);
+	}
+
+	if (next == NULL)
+	{
+		// 다음 책이 없으면 그냥 닫기
+		notify(self, 0, _("No next book found"));
+		close_book(self);
+	}
+	else
+	{
+		GFile* file = g_file_new_for_path(next);
+		g_free(next);
+		open_book(self, file);
+		g_object_unref(file);
+	}
 }
 
 // 단축키 - 책 이름 바꾸기
@@ -1390,8 +1409,9 @@ static void shortcut_rename_book(ReadWindow* self)
 void cb_move_book_done(gpointer sender, const char* directory)
 {
 	ReadWindow* self = sender;
+	Book* book = self->book;
 
-	if (self->book == NULL)
+	if (book == NULL)
 	{
 		// 책이 없으면 안내만 표시하고 나감
 		notify(self, 0, _("No book to move"));
@@ -1401,31 +1421,38 @@ void cb_move_book_done(gpointer sender, const char* directory)
 	if (!directory || *directory == '\0')
 		return;
 
-	if (g_strcmp0(directory, self->book->dir_name) == 0)
+	if (g_strcmp0(directory, book->dir_name) == 0)
 	{
 		notify(self, 0, _("Book is already in the selected directory"));
 		return;
 	}
 
-	gchar* fullname = g_build_filename(directory, self->book->base_name, NULL);
-	// 이름 바꾸기 전에 근처 파일을 만들어 놔야 한다
-	nears_build(self->book->dir_name, self->book->func.ext_compare);
-
-	if (!book_move(self->book, fullname))
+	char* next = nears_find_any(book->full_name, book->dir_name, book->func.ext_compare);
+	gchar* fullname = g_build_filename(directory, book->base_name, NULL);
+	if (!book_move(book, fullname))
 	{
 		notify(self, 0, _("Failed to rename book"));
 		g_free(fullname);
 		return;
 	}
 
-	self->book->cur_page = 0; // 페이지는 초기화
-
-	const char* next = nears_get_for_remove(self->book->full_name);
+	book->cur_page = 0; // 페이지는 초기화
 	g_free(fullname);
 
-	GFile* file = g_file_new_for_path(next);
-	open_book(self, file);
-	g_object_unref(file);
+	// 다음 책으로 넘어가보자
+	if (next == NULL)
+	{
+		// 다음 책이 없으면 그냥 닫기
+		notify(self, 0, _("No next book found"));
+		close_book(self);
+	}
+	else
+	{
+		GFile* file = g_file_new_for_path(next);
+		g_free(next);
+		open_book(self, file);
+		g_object_unref(file);
+	}
 }
 
 // 단축키 - 책 옮기기
