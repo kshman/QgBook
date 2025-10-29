@@ -105,22 +105,22 @@ static const char* cache_auto_get_item(const ConfigKeys key, char* value, const 
 
 	switch (def->type)
 	{
-	case CACHE_TYPE_INT:
-		g_snprintf(value, (gulong)value_size, "%d", item->n);
-		break;
-	case CACHE_TYPE_LONG:
-		g_snprintf(value, (gulong)value_size, "%lld", item->l);
-		break;
-	case CACHE_TYPE_BOOL:
-		g_strlcpy(value, item->b ? "true" : "false", value_size);
-		break;
-	case CACHE_TYPE_DOUBLE:
-		g_snprintf(value, (gulong)value_size, "%f", item->d);
-		break;
-	case CACHE_TYPE_STRING:
-		return item->s;
-	case CACHE_TYPE_UNKNOWN:
-		return NULL;
+		case CACHE_TYPE_INT:
+			g_snprintf(value, (gulong)value_size, "%d", item->n);
+			break;
+		case CACHE_TYPE_LONG:
+			g_snprintf(value, (gulong)value_size, "%lld", item->l);
+			break;
+		case CACHE_TYPE_BOOL:
+			g_strlcpy(value, item->b ? "true" : "false", value_size);
+			break;
+		case CACHE_TYPE_DOUBLE:
+			g_snprintf(value, (gulong)value_size, "%f", item->d);
+			break;
+		case CACHE_TYPE_STRING:
+			return item->s;
+		case CACHE_TYPE_UNKNOWN:
+			return NULL;
 	}
 
 	return value;
@@ -138,24 +138,24 @@ static void cache_auto_set_item(const ConfigKeys key, const char* value)
 
 	switch (def->type)
 	{
-	case CACHE_TYPE_INT:
-		item->n = (gint32)g_ascii_strtoll(value, NULL, 10);
-		break;
-	case CACHE_TYPE_LONG:
-		item->l = g_ascii_strtoll(value, NULL, 10);
-		break;
-	case CACHE_TYPE_BOOL:
-		item->b = doumi_atob(value);
-		break;
-	case CACHE_TYPE_DOUBLE:
-		item->d = g_ascii_strtod(value, NULL);
-		break;
-	case CACHE_TYPE_STRING:
-		item->s = g_strdup(value);
-		break;
-	case CACHE_TYPE_UNKNOWN:
-		g_free(item);
-		return;
+		case CACHE_TYPE_INT:
+			item->n = (gint32)g_ascii_strtoll(value, NULL, 10);
+			break;
+		case CACHE_TYPE_LONG:
+			item->l = g_ascii_strtoll(value, NULL, 10);
+			break;
+		case CACHE_TYPE_BOOL:
+			item->b = doumi_atob(value);
+			break;
+		case CACHE_TYPE_DOUBLE:
+			item->d = g_ascii_strtod(value, NULL);
+			break;
+		case CACHE_TYPE_STRING:
+			item->s = g_strdup(value);
+			break;
+		case CACHE_TYPE_UNKNOWN:
+			g_free(item);
+			return;
 	}
 
 	item->type = def->type;

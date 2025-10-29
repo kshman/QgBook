@@ -1356,12 +1356,16 @@ static void cb_rename_book_done(gpointer sender, const char* filename, bool reop
 	char* next = nears_find_any(book->full_name, book->dir_name, book->func.ext_compare);
 
 	if (g_strcmp0(filename, book->base_name) == 0)
+	{
+		g_free(next);
 		return;
+	}
 
 	char* new_filename = book_rename(book, filename);
 	if (new_filename == NULL)
 	{
 		notify(self, 0, _("Failed to rename book"));
+		g_free(next);
 		return;
 	}
 
@@ -1433,6 +1437,7 @@ void cb_move_book_done(gpointer sender, const char* directory)
 	{
 		notify(self, 0, _("Failed to rename book"));
 		g_free(fullname);
+		g_free(next);
 		return;
 	}
 
